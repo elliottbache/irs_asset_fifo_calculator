@@ -1,11 +1,12 @@
 <!-- docs:start -->
-# IRS asset FIFO calculator
 
 # To do!!!
 - Replace readthedocs link
 - Check if all columns in CSV are needed and change description accordingly.  Also change where the columns
 are treated inside the code.
 - Add arguments to python call.
+
+# IRS asset FIFO calculator
 
 <!---
 [![Documentation Status](https://readthedocs.org/projects/tls-connection-coding-challenge/badge/?version=latest)](https://tls-connection-coding-challenge.readthedocs.io/en/latest/?badge=latest)
@@ -38,11 +39,20 @@ containing all of the transactions are needed.
 $ python calculate_taxes.py asset_tx.csv
 ```
 
+In order to create Sphinx documentation from the docstrings in PyCharm, a new run task must be created: 
+Run > Edit Configurations... > + (top-left) > Sphinx task.  In the window that opens, name the Sphinx task in the
+"Name" field, select "html" under the "Command:" dropdown, select the docs folder in the root folder in the "Input:"
+field, and select the docs/_build folder in the "Output:" field.  If the docs or docs/_build folder do not already
+exist, they will perhaps need to be created.  The Sphinx documentation can now be created by going to Run > Run... and
+selecting the Sphinx task name.
+
 ## Technologies
 
 IRS asset FIFO calculator uses the following technologies and tools:
 
-- [Python](https://www.python.org/): ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+- [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
+- [![Sphinx](https://img.shields.io/badge/Sphinx-3B4D92?style=for-the-badge&logo=sphinx&logoColor=white)](https://www.sphinx-doc.org/en/master/)
+
 
 ## Contributing
 
