@@ -6,6 +6,8 @@
 are treated inside the code.
 - Add arguments to python call.
 
+[![Documentation Status](https://readthedocs.org/projects/irs-asset-fifo-calculator/badge/?version=latest)](https://irs-asset-fifo-calculator.readthedocs.io/en/latest/?badge=latest)
+
 # IRS asset FIFO calculator
 
 <!---
