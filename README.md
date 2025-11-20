@@ -1,18 +1,17 @@
 <!-- docs:start -->
 
 # To do!!!
-- Replace readthedocs link
+- Add type hinting
+- Create test case
+- Implement CI
 - Check if all columns in CSV are needed and change description accordingly.  Also change where the columns
 are treated inside the code.
 - Add arguments to python call.
 
-[![Documentation Status](https://readthedocs.org/projects/irs-asset-fifo-calculator/badge/?version=latest)](https://irs-asset-fifo-calculator.readthedocs.io/en/latest/?badge=latest)
 
 # IRS asset FIFO calculator
 
-<!---
-[![Documentation Status](https://readthedocs.org/projects/tls-connection-coding-challenge/badge/?version=latest)](https://tls-connection-coding-challenge.readthedocs.io/en/latest/?badge=latest)
--->
+[![Documentation Status](https://readthedocs.org/projects/irs-asset-fifo-calculator/badge/?version=latest)](https://irs-asset-fifo-calculator.readthedocs.io/en/latest/?badge=latest)
 
 Tax calculator that tracks capital gains from multiple purchases and sales.  This program uses a CSV file as input.  
 
