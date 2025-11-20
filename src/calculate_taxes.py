@@ -17,7 +17,10 @@ Functions:
 
 """
 
-def record_sale(asset, amount, proceeds, cost_basis, acquisition_date, sale_date):
+from datetime import datetime
+
+def record_sale(asset: str, amount: float, proceeds: float, cost_basis: float,
+                acquisition_date: datetime, sale_date: datetime) -> int:
     """Record a sale.
 
     This takes various data about the sale appends the data to the
@@ -25,11 +28,11 @@ def record_sale(asset, amount, proceeds, cost_basis, acquisition_date, sale_date
 
     Args:
         asset (str): The asset name.
-        amount (str): The amount of the asset units.
-        proceeds (int): The dollar amount of capital gains.
-        cost_basis (str): The dollar cost of this amount of asset.
-        acquisition_date (str): The acquisition date.
-        sale_date (str): The sale date.
+        amount (float): The amount of the asset units.
+        proceeds (float): The dollar amount of capital gains.
+        cost_basis (float): The dollar cost of this amount of asset.
+        acquisition_date (datetime): The acquisition date.
+        sale_date (datetime): The sale date.
 
     Returns:
         int : 0 if no error.
