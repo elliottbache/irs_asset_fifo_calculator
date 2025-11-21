@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "irs-asset-fifo-calculator"
+version = "0.0.1"
+description = "Calculate IRS capital gains taxes using FIFO from CSV input."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Elliott Bache", email = "elliottbache@gmail.com" }
+]
+keywords = ["taxes", "IRS", "capital-gains", "FIFO"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+# Runtime deps (if any); empty is fine if you're stdlib-only
+dependencies = []
+
+# Optional extras for dev tools
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "sphinx>=8.0",
+  "myst-parser>=3.0",
+]
+
+# If you want a CLI command: `irs-fifo-taxes`
+# (Assumes you have a `main()` in calculate_taxes.py)
+[project.scripts]
+irs-fifo-taxes = "irs_asset_fifo_calculator.calculate_taxes:main"
+
+[tool.setuptools]
+# Tell setuptools that packages live under `src/`
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
