@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
-from src.irs_asset_fifo_calculator import calculate_taxes
+from irs_asset_fifo_calculator import (calculate_taxes)
 
 
 # helpers
