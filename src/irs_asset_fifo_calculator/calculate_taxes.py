@@ -21,6 +21,7 @@ import sys
 from datetime import datetime
 from typing import List, Dict
 
+
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
                 proceeds: float, cost_basis: float, acquisition_date: datetime,
                 sale_date: datetime) -> None:
@@ -54,7 +55,8 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         ...     "Gain or Loss": "9000",
         ...     "Code": "",
         ...     "Adjustment Amount": ""})
-        >>> record_sale(form8949, "TSLA", 10, 100, 90, datetime(2024,1,1), datetime(2024,12,31))
+        >>> record_sale(form8949, "TSLA", 10, 100, 90, datetime(2024,1,1),
+        ...     datetime(2024,12,31))
         >>> len(form8949)
         2
         >>> form8949[1]["Description"]
@@ -76,19 +78,26 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
     """
 
     if not isinstance(acquisition_date, datetime):
-        raise TypeError("Acquisition date must be in datetime format.\n"
-                + str(amount) + " " + asset + " purchase on " + acquisition_date
-                + " is invalid.")
+        raise TypeError(
+            "Acquisition date must be in datetime format.\n"
+            + str(amount) + " " + asset + " purchase on "
+            + acquisition_date + " is invalid."
+        )
     if not isinstance(sale_date, datetime):
-        raise TypeError("Sale date must be in datetime format.\n",
-                amount, " ", asset, "sale on ", sale_date, " is invalid.")
+        raise TypeError(
+            "Sale date must be in datetime format.\n",
+            amount, " ", asset, "sale on ", sale_date, " is invalid."
+        )
 
     if not ((isinstance(amount, float) or isinstance(amount, int)) and
             (isinstance(proceeds, float) or isinstance(proceeds, int)) and
             (isinstance(cost_basis, float) or isinstance(cost_basis, int))):
         print(type(amount), type(proceeds), type(cost_basis))
-        raise TypeError("Amounts ($ and asset) must be in float format.\n"
-              + str(amount) + " " + asset + " sale on " + sale_date.strftime("%Y-%m-%d") + " is invalid.")
+        raise TypeError(
+            "Amounts ($ and asset) must be in float format.\n"
+            + str(amount) + " " + asset + " sale on "
+            + sale_date.strftime("%Y-%m-%d") + " is invalid."
+        )
 
     if amount < 0:
         print("Amount must be greater than zero.\n",
@@ -100,15 +109,21 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         proceeds = abs(proceeds)
     if cost_basis < 0:
         print("Cost basis must be greater than zero.\n",
-              amount, " ", asset, "purchase on ", acquisition_date, "is set as absolute.")
+              amount, " ", asset, "purchase on ", acquisition_date,
+              "is set as absolute.")
         cost_basis = abs(cost_basis)
 
-    if type(form8949) != list:
-        raise TypeError("A list object must be passed.  Create form8949 list first.")
+    if not isinstance(form8949, list):
+        raise TypeError(
+            "A list object must be passed. Create form8949 list first."
+        )
 
     if acquisition_date > sale_date:
-        raise ValueError("Acquisition date must be before sale date.\n"+
-            str(amount) + " " + asset + " sale on " + str(sale_date) + " is invalid.")
+        raise ValueError(
+            "Acquisition date must be before sale date.\n"
+            + str(amount) + " " + asset + " sale on " + str(sale_date)
+            + " is invalid."
+        )
 
     if proceeds >= 0.005 or cost_basis >= 0.005:
 
@@ -122,6 +137,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Code": "",
             "Adjustment Amount": ""
         })
+
 
 if __name__ == "__main__":
     form8949 = []
@@ -138,7 +154,7 @@ if __name__ == "__main__":
 
     try:
         record_sale(form8949, asset, amount, proceeds, cost_basis,
-                acquisition_date, sale_date)
+                    acquisition_date, sale_date)
     except (ValueError, TypeError) as err:
         print(f"Error recording sale: {err}")
         sys.exit(1)
