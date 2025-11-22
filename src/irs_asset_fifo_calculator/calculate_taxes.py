@@ -19,7 +19,8 @@ Functions:
 
 import sys
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, DefaultDict, Union, Deque
+from collections import defaultdict, deque
 
 
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
@@ -36,7 +37,8 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         asset (str): The asset name.
         amount (float): The amount of the asset units.
         proceeds (float): The dollar amount of capital gains.
-        cost_basis (float): The dollar cost of this amount of asset.
+        cost_basis (float): The dollar cost of this amount of asset
+            taking into account purchase fees.
         acquisition_date (datetime): The acquisition date.
         sale_date (datetime): The sale date.
 
@@ -139,11 +141,63 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         })
 
 
+def update_fifo(
+        form8949: List[Dict[str, str]], sell_amount: float, asset: str,
+        fifo: DefaultDict[str, Deque[Dict[str, Union[float | datetime]]]],
+        proceeds: float,
+        timestamp: datetime) -> None:
+    """ Update fifo list of lists.
+
+    FILL THIS IN!!!!
+
+    Args:
+        form8949 (List[Dict[str, str]]): Form 8949 list of dicts
+            holding txs.
+        sell_amount (float): this sale's amount
+        asset (str): this asset
+        fifo (DefaultDict[str, Deque[Dict[str, Union[float | datetime]]]]):
+            purchases of each token defined by their amount, price,
+            cost, and date
+        proceeds (float): this sale's proceeds
+        timestamp (datetime): this sale's date
+
+    Returns:
+        None
+
+    Example:
+    """
+
+    remaining = sell_amount
+    while remaining > 0 and fifo[asset]:
+
+        # set the current lot
+        lot = fifo[asset][0]
+        lot_amount = lot['amount']
+
+        used = min(remaining, lot_amount)
+        acquisition_date = lot['timestamp']
+
+        # proportional cost and proceeds from used
+        this_cost = used / lot_amount * lot['cost']
+        this_proceeds = used / sell_amount * proceeds
+
+        record_sale(form8949, asset, used, this_proceeds, this_cost,
+                    acquisition_date, timestamp)
+
+        lot['amount'] -= used
+        lot['cost'] -= this_cost
+        if lot['amount'] == 0:
+            fifo[asset].popleft()
+
+        remaining -= used
+
+
 if __name__ == "__main__":
     form8949 = []
     asset = 'AMZN'
     amount = 10
     proceeds = 100
+    price = 10
     cost_basis = 90
     acquisition_date = datetime(2024, 1, 1)
     sale_date = datetime.now()
@@ -160,3 +214,30 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(form8949)
+
+    fifo = defaultdict(deque)
+    fifo[asset].append({
+        "amount": amount,
+        "price": price,
+        "cost": cost_basis*1.002,
+        "timestamp": acquisition_date
+    })
+    fifo[asset].append({
+        "amount": amount*0.5,
+        "price": price*1.1,
+        "cost": (amount*0.5 * price*1.1)*1.002,
+        "timestamp": datetime(2024,2,1)
+    })
+    fifo[asset].append({
+        "amount": amount*0.2,
+        "price": price*0.8,
+        "cost": (amount*0.2 * price*0.8)*1.002,
+        "timestamp": datetime(2024,3,1)
+    })
+    print(fifo)
+
+    update_fifo(form8949, 5, asset, fifo, 60, datetime(2024,4,1))
+    print(fifo)
+
+    update_fifo(form8949, 6, asset, fifo, 70, datetime(2024,4,2))
+    print(fifo)
