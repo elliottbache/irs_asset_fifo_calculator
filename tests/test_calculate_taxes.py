@@ -205,7 +205,7 @@ class TestRecordSale:
                 proceeds, cost_basis, acquisition_date, sale_date):
         form8949 = dict()
 
-        with pytest.raises(TypeError, match="A list object must be passed.  "
+        with pytest.raises(TypeError, match="A list object must be passed. "
                 + "Create form8949 list first."):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
