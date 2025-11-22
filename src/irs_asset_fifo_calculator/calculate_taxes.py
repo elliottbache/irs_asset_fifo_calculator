@@ -41,6 +41,38 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
 
     Returns:
         None.
+
+    Example:
+        >>> from calculate_taxes import record_sale
+        >>> from datetime import datetime
+        >>> form8949 = list()
+        >>> form8949.append({"Description": "10.00000000 NVDA",
+        ...     "Date Acquired": "1982-10-27",
+        ...     "Date Sold": "2024-12-31",
+        ...     "Proceeds": "10000",
+        ...     "Cost Basis": "1000",
+        ...     "Gain or Loss": "9000",
+        ...     "Code": "",
+        ...     "Adjustment Amount": ""})
+        >>> record_sale(form8949, "TSLA", 10, 100, 90, datetime(2024,1,1), datetime(2024,12,31))
+        >>> len(form8949)
+        2
+        >>> form8949[1]["Description"]
+        '10.00000000 TSLA'
+        >>> form8949[1]["Date Acquired"]
+        '2024-01-01'
+        >>> form8949[1]["Date Sold"]
+        '2024-12-31'
+        >>> form8949[1]["Proceeds"]
+        '100.00'
+        >>> form8949[1]["Cost Basis"]
+        '90.00'
+        >>> form8949[1]["Gain or Loss"]
+        '10.00'
+        >>> form8949[1]["Code"]
+        ''
+        >>> form8949[1]["Adjustment Amount"]
+        ''
     """
 
     if not isinstance(acquisition_date, datetime):
