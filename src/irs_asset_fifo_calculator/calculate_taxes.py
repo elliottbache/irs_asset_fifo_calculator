@@ -148,7 +148,7 @@ def update_fifo(
         timestamp: datetime) -> None:
     """ Update fifo list of lists.
 
-    FILL THIS IN!!!!
+    Takes a sale and reduces the FIFO dict by the sale amount.
 
     Args:
         form8949 (List[Dict[str, str]]): Form 8949 list of dicts
@@ -165,6 +165,26 @@ def update_fifo(
         None
 
     Example:
+        >>> from calculate_taxes import update_fifo
+        >>> from datetime import datetime
+        >>> form8949 = list()
+        >>> fifo = defaultdict(deque)
+        >>> fifo['NVDA'].append({"amount": 10, "price": 10,
+        ...     "cost": 100*1.002, "timestamp": datetime(2024, 1, 1)})
+        >>> fifo['NVDA'].append({"amount": 20, "price": 11,
+        ...     "cost": 210*1.002, "timestamp": datetime(2024, 2, 1)})
+        >>> update_fifo(form8949, 15, 'NVDA', fifo, 135,
+        ...     datetime(2024, 3, 1))
+        >>> len(fifo['NVDA'])
+        1
+        >>> abs(fifo['NVDA'][0]['amount'] - 15) < 0.001
+        True
+        >>> abs(fifo['NVDA'][0]['price'] - 11) < 0.001
+        True
+        >>> abs(fifo['NVDA'][0]['cost'] - 157.5*1.002) < 0.001
+        True
+        >>> fifo['NVDA'][0]['timestamp']
+        datetime.datetime(2024, 2, 1, 0, 0)
     """
 
     remaining = sell_amount
@@ -198,7 +218,7 @@ if __name__ == "__main__":
     amount = 10
     proceeds = 100
     price = 10
-    cost_basis = 90
+    cost_basis = 100
     acquisition_date = datetime(2024, 1, 1)
     sale_date = datetime.now()
     """
