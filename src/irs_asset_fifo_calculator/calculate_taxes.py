@@ -19,8 +19,9 @@ Functions:
 
 import sys
 from datetime import datetime
-from typing import List, Dict, DefaultDict, Union, Deque
+from typing import List, Dict, DefaultDict, Deque, TypedDict
 from collections import defaultdict, deque
+import numbers
 
 
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
@@ -94,7 +95,6 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
     if not ((isinstance(amount, float) or isinstance(amount, int)) and
             (isinstance(proceeds, float) or isinstance(proceeds, int)) and
             (isinstance(cost_basis, float) or isinstance(cost_basis, int))):
-        print(type(amount), type(proceeds), type(cost_basis))
         raise TypeError(
             "Amounts ($ and asset) must be in float format.\n"
             + str(amount) + " " + asset + " sale on "
@@ -140,22 +140,28 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Adjustment Amount": ""
         })
 
+class FifoLot:
+    amount: float
+    price: float
+    cost: float
+    timestamp: datetime
 
 def update_fifo(
         form8949: List[Dict[str, str]], sell_amount: float, asset: str,
-        fifo: DefaultDict[str, Deque[Dict[str, Union[float | datetime]]]],
+        fifo: DefaultDict[str, Deque[FifoLot]],
         proceeds: float,
         timestamp: datetime) -> None:
-    """ Update fifo list of lists.
+    """Update FIFO lots for a sale.
 
-    Takes a sale and reduces the FIFO dict by the sale amount.
+    Takes a sale and reduces the FIFO lots for that asset by the sale amount,
+    recording one or more rows in form8949.
 
     Args:
         form8949 (List[Dict[str, str]]): Form 8949 list of dicts
             holding txs.
         sell_amount (float): this sale's amount
         asset (str): this asset
-        fifo (DefaultDict[str, Deque[Dict[str, Union[float | datetime]]]]):
+        fifo (DefaultDict[str, Deque[FifoLot]]):
             purchases of each token defined by their amount, price,
             cost, and date
         proceeds (float): this sale's proceeds
@@ -167,6 +173,7 @@ def update_fifo(
     Example:
         >>> from calculate_taxes import update_fifo
         >>> from datetime import datetime
+        >>> from collections import defaultdict, deque
         >>> form8949 = list()
         >>> fifo = defaultdict(deque)
         >>> fifo['NVDA'].append({"amount": 10, "price": 10,
@@ -187,27 +194,55 @@ def update_fifo(
         datetime.datetime(2024, 2, 1, 0, 0)
     """
 
+    if asset not in fifo or not fifo[asset]:
+        raise ValueError(f"Fifo does not contain {asset}.")
+
+    if sell_amount < 0:
+        sell_amount = abs(sell_amount)
+
     remaining = sell_amount
     while remaining > 0 and fifo[asset]:
 
         # set the current lot
         lot = fifo[asset][0]
-        lot_amount = lot['amount']
 
-        used = min(remaining, lot_amount)
+        # check if all necessary keys are present in fifo row
+        required_keys = ['amount', 'price', 'cost', 'timestamp']
+        if not all(key in lot for key in required_keys):
+            raise KeyError(f"FIFO contains an invalid purchase. {lot}")
+
+        # check if all data is the right type
+        if not isinstance(lot['amount'], numbers.Number) \
+                or not isinstance(lot['price'], numbers.Number) \
+                or not isinstance(lot['cost'], numbers.Number) \
+                or not isinstance(lot['timestamp'], datetime):
+            raise TypeError(f"FIFO contains an invalid purchase. {lot}")
+
+        if lot['amount'] == 0:
+            fifo[asset].popleft()
+            continue
+        elif lot['amount'] < 0:
+            lot['amount'] = abs(lot['amount'])
+
+        if lot['cost'] < 0:
+            lot['cost'] = abs(lot['cost'])
+
         acquisition_date = lot['timestamp']
+        used = min(remaining, lot['amount'])
 
         # proportional cost and proceeds from used
-        this_cost = used / lot_amount * lot['cost']
+        this_cost = used / lot['amount'] * lot['cost']
+
         this_proceeds = used / sell_amount * proceeds
 
         record_sale(form8949, asset, used, this_proceeds, this_cost,
                     acquisition_date, timestamp)
 
         lot['amount'] -= used
-        lot['cost'] -= this_cost
         if lot['amount'] == 0:
             fifo[asset].popleft()
+
+        lot['cost'] -= this_cost
 
         remaining -= used
 
@@ -229,7 +264,7 @@ if __name__ == "__main__":
     try:
         record_sale(form8949, asset, amount, proceeds, cost_basis,
                     acquisition_date, sale_date)
-    except (ValueError, TypeError) as err:
+    except (KeyError, TypeError) as err:
         print(f"Error recording sale: {err}")
         sys.exit(1)
 
@@ -256,8 +291,16 @@ if __name__ == "__main__":
     })
     print(fifo)
 
-    update_fifo(form8949, 5, asset, fifo, 60, datetime(2024,4,1))
+    try:
+        update_fifo(form8949, 5, asset, fifo, 60, datetime(2024, 4, 1))
+    except (KeyError, TypeError) as err:
+        print(f"{type(err)} Error updating FIFO: {err}")
+        sys.exit(1)
     print(fifo)
 
-    update_fifo(form8949, 6, asset, fifo, 70, datetime(2024,4,2))
+    try:
+        update_fifo(form8949, 6, asset, fifo, 70, datetime(2024, 4, 2))
+    except (KeyError, TypeError) as err:
+        print(f"{type(err)} Error updating FIFO: {err}")
+        sys.exit(1)
     print(fifo)
