@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
 from irs_asset_fifo_calculator import (calculate_taxes)
+from collections import deque, defaultdict
 
 
 # helpers
@@ -27,7 +28,7 @@ def form8949():
 
 @pytest.fixture(scope="function")
 def asset():
-    return 'TSLA'
+    return 'NVDA'
 
 @pytest.fixture(scope="function")
 def amount():
@@ -55,7 +56,7 @@ class TestRecordSale:
         calculate_taxes.record_sale(form8949, asset, amount, proceeds,
                                     cost_basis, acquisition_date, sale_date)
         assert len(form8949) == 2
-        assert  form8949[1]["Description"] == "10.00000000 TSLA"
+        assert  form8949[1]["Description"] == "10.00000000 " + asset
         assert  form8949[1]["Date Acquired"] == "2024-01-01"
         assert  form8949[1]["Date Sold"] == "2024-12-31"
         assert  form8949[1]["Proceeds"] == "120.00"
@@ -209,3 +210,107 @@ class TestRecordSale:
                 + "Create form8949 list first."):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
+
+
+@pytest.fixture(scope="function")
+def fifo():
+    return {'NVDA': deque([{"amount": 10, "price": 10, "cost": 100,
+                            "timestamp": datetime(2024, 1, 1)},
+                           {"amount": 5, "price": 11,
+                            "cost": (5 * 11) * 1.002,
+                            "timestamp": datetime(2024, 2, 1)},
+                           {"amount": 2, "price": 8,
+                            "cost": (2 * 8) * 1.002,
+                            "timestamp": datetime(2024, 3, 1)}])
+            }
+
+class TestUpdateFifo:
+
+    @pytest.mark.parametrize(
+        "sell_amount, expected",
+        [
+            (10, {'length': 2, 'amount': 5, 'price': 11, 'cost': (5 * 11) * 1.002,
+                  "timestamp": datetime(2024, 2, 1)}),
+            (9, {'length': 3, 'amount': 10 - 9, 'price': 10, 'cost': 100 * (10 - 9) / 10,
+                 "timestamp": datetime(2024, 1, 1)}),
+            (15, {'length': 1, 'amount': 10 + 5 - 15 + 2, 'price': 8, 'cost': (2 * 8) * 1.002,
+                  "timestamp": datetime(2024, 3, 1)}),
+            (0, {'length': 3, 'amount': 10, 'price': 10, 'cost': 100,
+                 "timestamp": datetime(2024, 1, 1)}),
+            (-1, {'length': 3, 'amount': 10 - 1, 'price': 10, 'cost': 100 * (10 - 1) / 10,
+                  "timestamp": datetime(2024, 1, 1)}),
+            (0.00000001, {'length': 3, 'amount': 10 - 0.00000001, 'price': 10, 'cost': 100 * (10 - 0.00000001) / 10,
+                          "timestamp": datetime(2024, 1, 1)})
+        ],
+        ids=["sell-10", "sell-9", "sell-15", "sell-0", "sell-neg1", "sell-tiny"]
+    )
+
+    def test_update_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
+        form8949 = list()
+        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo, 100,
+                                    datetime(2024, 4, 1))
+        assert len(fifo[asset]) == expected['length']
+        assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], 0, 1e-6)
+        assert fifo[asset][0]['price'] == pytest.approx(expected['price'], 0, 1e-6)
+        assert fifo[asset][0]['cost'] == pytest.approx(expected['cost'], 0, 1e-6)
+        assert fifo[asset][0]['timestamp'] == expected['timestamp']
+
+        if expected['length'] == 3:
+            # check that 2nd and 3rd lost remain unchanged
+            assert fifo[asset][1]['amount'] == pytest.approx(5, 1e-6, 0)
+            assert fifo[asset][1]['price'] == pytest.approx(11, 1e-6, 0)
+            assert fifo[asset][1]['cost'] == pytest.approx((5 * 11) * 1.002, 1e-6, 0)
+            assert fifo[asset][1]['timestamp'] == datetime(2024, 2, 1)
+            assert fifo[asset][2]['amount'] == pytest.approx(2, 1e-6, 0)
+            assert fifo[asset][2]['price'] == pytest.approx(8, 1e-6, 0)
+            assert fifo[asset][2]['cost'] == pytest.approx((2 * 8) * 1.002, 1e-6, 0)
+            assert fifo[asset][2]['timestamp'] == datetime(2024, 3, 1)
+
+            # check that form8949 is written correctly
+            if sell_amount > 0:
+                assert form8949[0]['Description'] == f"{round(sell_amount, 8):.8f}" + " " + asset
+                assert form8949[0]['Date Acquired'] == f"2024-01-01"
+                assert form8949[0]['Date Sold'] == f"2024-04-01"
+                assert form8949[0]['Proceeds'] == f"{round(100, 2):.2f}"
+                assert form8949[0]['Cost Basis'] == f"{100 - round(fifo[asset][0]['cost'], 2):.2f}"
+                assert form8949[0]['Gain or Loss'] == f"{round(100 - (100 - fifo[asset][0]['cost']), 2):.2f}"
+                assert form8949[0]['Code'] == ""
+                assert form8949[0]['Adjustment Amount'] == ""
+
+    def test_update_fifo_missing_key(self, asset, amount, proceeds,
+            sale_date, fifo):
+        del fifo[asset][0]['amount']
+        with pytest.raises(KeyError, match=r"contains an invalid"
+                           + " purchase."):
+            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+                                        sale_date)
+
+    def test_update_fifo_type_error(self, asset, amount, proceeds,
+            sale_date, fifo):
+        fifo[asset][0]['amount'] = 'five'
+        with pytest.raises(TypeError, match=r"contains an invalid"
+                           + " purchase."):
+            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+                                        sale_date)
+
+    def test_update_fifo_small_lot_amount(self, asset, fifo):
+        """
+        We reduce the tiny first lot to zero, then continue selling
+        # from the second lot; the remaining amount after selling 4
+        from the 5-unit second lot + tiny first lot is 1.00001
+        """
+        fifo[asset][0]['amount'] = 0.00001
+        calculate_taxes.update_fifo([], 4, asset, fifo, 100,
+                                    datetime(2024, 4, 1))
+        assert len(fifo[asset]) == 2
+        assert fifo[asset][0]['amount'] == pytest.approx(1.00001, 0, 1e-8)
+        assert fifo[asset][0]['price'] == pytest.approx(11, 0, 1e-6)
+        assert fifo[asset][0]['cost'] == pytest.approx(55*1.002*1.00001/5, 0, 1e-6)
+        assert fifo[asset][0]['timestamp'] == datetime(2024, 2, 1)
+
+    def test_update_fifo_missing_asset(self, asset, amount, proceeds,
+            sale_date, fifo):
+        del fifo[asset]
+        with pytest.raises(ValueError, match=f"does not contain"):
+            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+                                        sale_date)
