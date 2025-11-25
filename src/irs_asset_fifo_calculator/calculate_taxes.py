@@ -5,7 +5,7 @@ Tax calculator that tracks capital gains from multiple purchases and
 sales.  This program uses a CSV file as input.  This file is called
 "asset_tx.csv" in the published example, but any name can be used,
 using this name in the python call. The file has the following header:
-Date,Asset,Amount (asset), Sell Price ($),Buy Price ($),Account number,
+Date,Asset,Amount (asset), Sell price ($),Buy price ($),Account number,
 Entity,Notes,Remaining
 
 Functions:
@@ -279,13 +279,13 @@ def define_amounts(row0: pd.Series, row1: pd.Series) -> tuple[float, float]:
         >>> from calculate_taxes import define_amounts
         >>> import pandas as pd
         >>> row0 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
-        ...       'Amount (asset)': -1250.0, 'Sell Price ($)': 1.0,
-        ...       'Buy Price ($)': 1.0, 'Account number': 1234,
+        ...       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
+        ...       'Buy price ($)': 1.0, 'Account number': 1234,
         ...       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
         ...       'Timestamp': '2024-09-04 00:00:00'})
         >>> row1 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
-        ...        'Amount (asset)': 10.0, 'Sell Price ($)': 'NaN',
-        ...        'Buy Price ($)': 12.0, 'Account number': 1234,
+        ...        'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
+        ...        'Buy price ($)': 12.0, 'Account number': 1234,
         ...        'Entity': 'Chase', 'Notes': '', 'Remaining': '',
         ...        'Timestamp': '2024-09-04 00:00:00'})
         >>> define_amounts(row0, row1)
@@ -293,6 +293,73 @@ def define_amounts(row0: pd.Series, row1: pd.Series) -> tuple[float, float]:
     """
 
     return parse_amount(row0['Amount (asset)']), parse_amount(row1['Amount (asset)'])
+
+def define_blocks(row0: pd.Series, row1: pd.Series) -> tuple[str, int]:
+    """Define blocks based on two rows of related transactions.
+
+    Possible block_types = approved_exchange (requiring an extra approval transaction),
+        transfer, purchase, sale, exchange (where USD is not involved)
+
+    Args:
+        row0 (pd.Series): row containing the first assets info
+        row1 (pd.Series): row containing the second assets info
+
+    Returns:
+        tuple[str, int]: block type, number of transactions in this block
+
+    Example:
+        >>> from calculate_taxes import define_blocks
+        >>> import pandas as pd
+        >>> row0 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+        ...       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
+        ...       'Buy price ($)': 1.0, 'Account number': 1234,
+        ...       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+        ...       'Timestamp': '2024-09-04 00:00:00'})
+        >>> row1 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+        ...        'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
+        ...        'Buy price ($)': 12.0, 'Account number': 1234,
+        ...        'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+        ...        'Timestamp': '2024-09-04 00:00:00'})
+        >>> define_blocks(row0, row1)
+        ('purchase', 3)
+    """
+
+    asset0 = str(row0['Asset'])
+    asset1 = str(row1['Asset'])
+    account0 = row0['Account number']
+
+    n_txs = {}
+
+    amount0, amount1 = define_amounts(row0, row1)
+
+    # special case: Exchange with separate approval + fee row
+    if account0 == 'Approved' and asset0.startswith("fee") and len(asset0) > 3:
+        block_type = 'approved_exchange'
+        n_tx = 4
+    # TEMP: treat account IDs with '-' as transfers
+    elif '-' in str(account0):
+        block_type = 'transfer'
+        n_tx = 2
+    # Fiat → asset
+    elif asset0 == 'USD' and amount1 > 0:
+        block_type = 'purchase'
+        n_tx = 3
+    # Asset → fiat
+    elif asset1 == 'USD' and amount0 < 0:
+        block_type = 'sale'
+        n_tx = 3
+    # Asset → asset
+    elif (asset0 != 'USD' and asset1 != 'USD'
+          and amount0 < 0 and amount1 > 0):
+        block_type = 'exchange'
+        n_tx = 3
+    else:
+        raise ValueError(f"Invalid block: could not classify transaction pair"
+                         "\naccount0: {account0}\nasset0: {asset0} amount0: {amount0}"
+                         "\nasset1: {asset1} amount1: {amount1}")
+
+    return block_type, n_tx
+
 
 if __name__ == "__main__":
 
@@ -310,9 +377,12 @@ if __name__ == "__main__":
     # Main loop
     len_df = len(df)
     idx = 0
-    while idx < len_df - 1:
+    while idx < len_df:
         # print(f"Processing row {idx}: {df.iloc[idx]}")
-        amount0, amount1 = define_amounts(df.iloc[idx], df.iloc[idx + 1])
+        if idx < len_df - 1:
+            amount0, amount1 = define_amounts(df.iloc[idx], df.iloc[idx + 1])
+        else:
+            print("1-block transactions must be implemented.")
         # print(f"Amounts {amount0}, {amount1}")
         idx += 1
 
