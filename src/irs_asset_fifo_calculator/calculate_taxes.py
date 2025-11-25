@@ -360,6 +360,96 @@ def define_blocks(row0: pd.Series, row1: pd.Series) -> tuple[str, int]:
 
     return block_type, n_tx
 
+def is_fee(asset: str) -> bool:
+    """Check if asset is a fee transaction.
+
+    In order to be a fee, the asset must start with the letters 'fee',
+    and be longer than 5 characters.  This will help weed out assets
+    that begin with the letters fee (improbable) and do not have at
+    least another 3 letters as tickers usually have 3 or 4 letters.
+    """
+    if asset.startswith("fee") and len(asset) > 5:
+        return True
+    else:
+        return False
+
+def check_fees(block_type: str, rows: pd.DataFrame) -> None:
+    """Check dataframe for fees in the correct rows.
+
+    Args:
+        block_type (str): type of block
+        rows (pd.DataFrame): dataframe containing transactions for this block
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: if the rows do not contain the right number of fee
+         entries given by the block_type.
+
+    Example:
+        >>> from calculate_taxes import check_fees
+        >>> import pandas as pd
+        >>> block_type = 'purchase'
+        >>> rows = pd.DataFrame({'Date': ['9/4/2024','9/4/2024',
+        ...     '9/4/2024'],
+        ...     'Asset': ['USD', 'NVDA', 'feeUSD'],
+        ...     'Amount (asset)': [-1250, 10, -5],
+        ...     'Sell price ($)': [1, 'NaN', 1],
+        ...     'Buy price ($)': [1, 125, 1],
+        ...     'Account number': [1234, 1234, 1234],
+        ...     'Entity': ['Chase', 'Chase', 'Chase'],
+        ...     'Notes': ['', '', ''],
+        ...     'Remaining': ['', '', '']})
+        >>> check_fees(block_type, rows)
+
+        """
+
+    if len(rows) == 0:
+        raise ValueError('Empty dataframe.')
+
+    first_asset = rows.iloc[0]['Asset']
+    last_asset = rows.iloc[-1]['Asset']
+
+    message_missing = (f"Invalid block: missing fee for "
+                + f"{rows.iloc[0]['Amount (asset)']} {first_asset}"
+                + f" on {rows.iloc[0]['Date']}"
+    )
+    message_extra = (f"Invalid block: extra fee for "
+                + f"{rows.iloc[0]['Amount (asset)']} {first_asset}"
+                + f" on {rows.iloc[0]['Date']}"
+    )
+    message_approval = (f"Invalid block: missing approval fee for "
+                + f"{rows.iloc[0]['Amount (asset)']} {first_asset}"
+                + f" on {rows.iloc[0]['Date']}"
+    )
+
+    if block_type == 'transfer':
+        if is_fee(first_asset):
+            raise ValueError(message_extra)
+        if not is_fee(last_asset):
+            raise ValueError(message_missing)
+        return None
+
+    if block_type == 'approved_exchange':
+        if not is_fee(first_asset):
+            raise ValueError(message_approval)
+        if not is_fee(last_asset):
+            raise ValueError(message_missing)
+        if is_fee(rows.iloc[1]['Asset']):
+            raise ValueError(message_extra)
+        if is_fee(rows.iloc[2]['Asset']):
+            raise ValueError(message_extra)
+        return None
+
+    # all other block types have 3 tx
+    if is_fee(first_asset):
+        raise ValueError(message_extra)
+    if not is_fee(last_asset):
+        raise ValueError(message_missing)
+    if is_fee(rows.iloc[1]['Asset']):
+        raise ValueError(message_extra)
+
 
 if __name__ == "__main__":
 
@@ -367,6 +457,10 @@ if __name__ == "__main__":
     file_path = "../asset_tx.csv"
     df = pd.read_csv(file_path)
     df['Timestamp'] = pd.to_datetime(df['Date'])
+
+    pd.set_option('display.max_rows', None)  # Show all rows
+    pd.set_option('display.max_columns', None)  # Show all columns
+#    print(df.iloc[:4])
 
     # Prepare FIFO ledger for each token
     fifo = defaultdict(deque)
