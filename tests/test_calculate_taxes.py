@@ -319,16 +319,16 @@ class TestUpdateFifo:
 @pytest.fixture(scope="function")
 def row0():
     return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
-                      'Amount (asset)': -1250.0, 'Sell Price ($)': 1.0,
-                      'Buy Price ($)': 1.0, 'Account number': 1234,
+                      'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
+                      'Buy price ($)': 1.0, 'Account number': 1234,
                       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
                       'Timestamp': '2024-09-04 00:00:00'})
 
 @pytest.fixture(scope="function")
 def row1():
     return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
-                      'Amount (asset)': 10.0, 'Sell Price ($)': 'NaN',
-                      'Buy Price ($)': 12.0, 'Account number': 1234,
+                      'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
+                      'Buy price ($)': 12.0, 'Account number': 1234,
                       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
                       'Timestamp': '2024-09-04 00:00:00'})
 
@@ -346,7 +346,8 @@ class TestDefineAmounts:
         ids=["normal_amount", "comma_separator_amount", "trailing_comma_amount",
              "padded_comma_separator_decimals_trailing_comma", "row1_amount"]
     )
-    def test_define_amounts_with_comma(self, series_amounts, row0, row1):
+
+    def test_define_amounts_success(self, series_amounts, row0, row1):
         row0['Amount (asset)'] = series_amounts[0]
         row1['Amount (asset)'] = series_amounts[1]
         amount0, amount1 = calculate_taxes.define_amounts(row0, row1)
@@ -368,3 +369,52 @@ class TestDefineAmounts:
         with pytest.raises(TypeError, match="Invalid amount"):
             calculate_taxes.define_amounts(row0, row1)
 
+
+class TestDefineBlocks:
+    @pytest.mark.parametrize(
+        "account_number0, asset0, asset1, amnt0, amnt1, expected",
+        [
+            ('Approved', 'feeNVDA', 'USD', -1.0, -100.0, ('approved_exchange', 4)),
+            ('1234-5688', 'NVDA', 'feeUSD', 50.0, -2.0, ('transfer', 2)),
+            ('1234', 'USD', 'NVDA', -100.0, 8.0, ('purchase', 3)),
+            ('1234', 'NVDA', 'USD', -8.0, 100.0, ('sale', 3)),
+            ('1234', 'TSLA', 'NVDA', -100.0, 8.0, ('exchange', 3)),
+            ("1234", "USD", "NVDA", "-1,250.0", "10.0", ("purchase", 3)),
+            ('Approved', 'TSLA', 'NVDA', -100.0, 8.0, ('exchange', 3)),
+            ('1234-5688', 'USD', 'feeUSD', 50.0, -2.0, ('transfer', 2)),
+        ],
+        ids=['approved_exchange', 'transfer', 'purchase', 'sale', 'exchange',
+             'dirty_purchase_amount', 'approved_no_fee', 'usd_transfer']
+    )
+
+    def test_define_blocks_success(self, account_number0, asset0, asset1, amnt0,
+                                   amnt1, expected, row0, row1):
+        row0['Account number'] = account_number0
+        row0['Asset'] = asset0
+        row1['Asset'] = asset1
+        row0['Amount (asset)'] = amnt0
+        row1['Amount (asset)'] = amnt1
+        block_type, n_tx = calculate_taxes.define_blocks(row0, row1)
+        assert block_type == expected[0]
+        assert n_tx == expected[1]
+
+    @pytest.mark.parametrize(
+        "asset0, asset1, amnt0, amnt1",
+        [
+            ('NVDA', 'TSLA', 5, 10.0),
+            ('NVDA', 'TSLA', 5, -10.0),
+            ('USD', 'NVDA', -100.0, -8.0),
+            ('NVDA', 'USD', 100.0, 8.0),
+        ],
+        ids=['two_positive_amounts', 'inverted_exchange_amounts',
+             'negative_purchase', 'positive_sale']
+    )
+
+    def test_define_blocks_fail(self, asset0, asset1, amnt0, amnt1, row0, row1):
+        row0['Asset'] = asset0
+        row1['Asset'] = asset1
+        row0['Amount (asset)'] = amnt0
+        row1['Amount (asset)'] = amnt1
+        with pytest.raises(ValueError, match="Invalid block: could not "
+                           + "classify transaction pair"):
+            calculate_taxes.define_blocks(row0, row1)
