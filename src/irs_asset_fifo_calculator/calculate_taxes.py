@@ -17,7 +17,6 @@ Functions:
 
 """
 
-import sys
 from datetime import datetime
 from typing import List, Dict, DefaultDict, Deque, TypedDict, Any
 from collections import defaultdict, deque
