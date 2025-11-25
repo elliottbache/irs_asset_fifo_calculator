@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 from datetime import datetime, timedelta
 from irs_asset_fifo_calculator import (calculate_taxes)
@@ -303,9 +304,9 @@ class TestUpdateFifo:
         calculate_taxes.update_fifo([], 4, asset, fifo, 100,
                                     datetime(2024, 4, 1))
         assert len(fifo[asset]) == 2
-        assert fifo[asset][0]['amount'] == pytest.approx(1.00001, 0, 1e-8)
-        assert fifo[asset][0]['price'] == pytest.approx(11, 0, 1e-6)
-        assert fifo[asset][0]['cost'] == pytest.approx(55*1.002*1.00001/5, 0, 1e-6)
+        assert fifo[asset][0]['amount'] == pytest.approx(1.00001, rel=0, abs=1e-8)
+        assert fifo[asset][0]['price'] == pytest.approx(11, rel=0, abs=1e-6)
+        assert fifo[asset][0]['cost'] == pytest.approx(55*1.002*1.00001/5, rel=0, abs=1e-6)
         assert fifo[asset][0]['timestamp'] == datetime(2024, 2, 1)
 
     def test_update_fifo_missing_asset(self, asset, amount, proceeds,
@@ -314,3 +315,56 @@ class TestUpdateFifo:
         with pytest.raises(ValueError, match=f"does not contain"):
             calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
                                         sale_date)
+
+@pytest.fixture(scope="function")
+def row0():
+    return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+                      'Amount (asset)': -1250.0, 'Sell Price ($)': 1.0,
+                      'Buy Price ($)': 1.0, 'Account number': 1234,
+                      'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+                      'Timestamp': '2024-09-04 00:00:00'})
+
+@pytest.fixture(scope="function")
+def row1():
+    return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+                      'Amount (asset)': 10.0, 'Sell Price ($)': 'NaN',
+                      'Buy Price ($)': 12.0, 'Account number': 1234,
+                      'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+                      'Timestamp': '2024-09-04 00:00:00'})
+
+class TestDefineAmounts:
+
+    @pytest.mark.parametrize(
+        "series_amounts",
+        [
+            ('-1250', '10.0'),
+            ('-1,250', '10.0'),
+            ('-1250,', '10.0'),
+            (' - 1,250.00, ', '10.0'),
+            (' -1,250.00, ', ' 10.0, ')
+        ],
+        ids=["normal_amount", "comma_separator_amount", "trailing_comma_amount",
+             "padded_comma_separator_decimals_trailing_comma", "row1_amount"]
+    )
+    def test_define_amounts_with_comma(self, series_amounts, row0, row1):
+        row0['Amount (asset)'] = series_amounts[0]
+        row1['Amount (asset)'] = series_amounts[1]
+        amount0, amount1 = calculate_taxes.define_amounts(row0, row1)
+        assert amount0 == pytest.approx(-1250, rel=1e-6, abs=0)
+        assert amount1 == pytest.approx(10, rel=1e-6, abs=0)
+
+    def test_define_amounts_non_number_row0(self, row0, row1):
+        row0['Amount (asset)'] = 'blah'
+        with pytest.raises(ValueError, match="Invalid amount"):
+            calculate_taxes.define_amounts(row0, row1)
+
+    def test_define_amounts_non_number_row1(self, row0, row1):
+        row1['Amount (asset)'] = 'blah'
+        with pytest.raises(ValueError, match="Invalid amount"):
+            calculate_taxes.define_amounts(row0, row1)
+
+    def test_define_amounts_wrong_type(self, row0, row1):
+        row0['Amount (asset)'] = []
+        with pytest.raises(TypeError, match="Invalid amount"):
+            calculate_taxes.define_amounts(row0, row1)
+
