@@ -209,3 +209,6 @@ __marimo__/
 # PyCharm
 .idea
 *Zone.Identifier
+
+# Input data
+*.csv

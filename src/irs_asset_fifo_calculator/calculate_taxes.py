@@ -19,9 +19,10 @@ Functions:
 
 import sys
 from datetime import datetime
-from typing import List, Dict, DefaultDict, Deque, TypedDict
+from typing import List, Dict, DefaultDict, Deque, TypedDict, Any
 from collections import defaultdict, deque
 import numbers
+import pandas as pd
 
 
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
@@ -140,7 +141,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Adjustment Amount": ""
         })
 
-class FifoLot:
+class FifoLot(TypedDict):
     amount: float
     price: float
     cost: float
@@ -246,9 +247,77 @@ def update_fifo(
 
         remaining -= used
 
+def parse_amount(value: Any) -> float:
+    """Parse amount from input.  Can be string or numeric."""
+
+    if isinstance(value, numbers.Number):
+        return float(value)
+
+    if isinstance(value, str):
+        clean_value = "".join(value.replace(',', '').split())
+        try:
+            return float(clean_value)
+        except ValueError:
+            raise ValueError(f"Invalid amount {value}")
+
+    raise TypeError(f"Invalid amount {value}")
+
+def define_amounts(row0: pd.Series, row1: pd.Series) -> tuple[float, float]:
+    """Define amount0 and amount1.
+
+    These amounts correspond to the asset being sold and the asset being
+    bought.  In most situations, one of the assets will be USD.
+
+    Args:
+        row0 (pd.Series): row containing the first assets info
+        row1 (pd.Series): row containing the second assets info
+
+    Returns:
+        tuple[float, float]: amount0, amount1
+
+    Example:
+        >>> from calculate_taxes import define_amounts
+        >>> import pandas as pd
+        >>> row0 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+        ...       'Amount (asset)': -1250.0, 'Sell Price ($)': 1.0,
+        ...       'Buy Price ($)': 1.0, 'Account number': 1234,
+        ...       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+        ...       'Timestamp': '2024-09-04 00:00:00'})
+        >>> row1 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+        ...        'Amount (asset)': 10.0, 'Sell Price ($)': 'NaN',
+        ...        'Buy Price ($)': 12.0, 'Account number': 1234,
+        ...        'Entity': 'Chase', 'Notes': '', 'Remaining': '',
+        ...        'Timestamp': '2024-09-04 00:00:00'})
+        >>> define_amounts(row0, row1)
+        (-1250.0, 10.0)
+    """
+
+    return parse_amount(row0['Amount (asset)']), parse_amount(row1['Amount (asset)'])
 
 if __name__ == "__main__":
+
+    # Load your file from the project root folder
+    file_path = "../asset_tx.csv"
+    df = pd.read_csv(file_path)
+    df['Timestamp'] = pd.to_datetime(df['Date'])
+
+    # Prepare FIFO ledger for each token
+    fifo = defaultdict(deque)
+
+    # Output for Form 8949
     form8949 = []
+
+    # Main loop
+    len_df = len(df)
+    idx = 0
+    while idx < len_df - 1:
+        # print(f"Processing row {idx}: {df.iloc[idx]}")
+        amount0, amount1 = define_amounts(df.iloc[idx], df.iloc[idx + 1])
+        # print(f"Amounts {amount0}, {amount1}")
+        idx += 1
+
+
+    """
     asset = 'AMZN'
     amount = 10
     proceeds = 100
@@ -256,10 +325,6 @@ if __name__ == "__main__":
     cost_basis = 100
     acquisition_date = datetime(2024, 1, 1)
     sale_date = datetime.now()
-    """
-    acquisition_date = datetime.now()
-    sale_date = datetime(2024, 1, 1)
-    """
 
     try:
         record_sale(form8949, asset, amount, proceeds, cost_basis,
@@ -270,7 +335,6 @@ if __name__ == "__main__":
 
     print(form8949)
 
-    fifo = defaultdict(deque)
     fifo[asset].append({
         "amount": amount,
         "price": price,
@@ -304,3 +368,5 @@ if __name__ == "__main__":
         print(f"{type(err)} Error updating FIFO: {err}")
         sys.exit(1)
     print(fifo)
+    """
+
