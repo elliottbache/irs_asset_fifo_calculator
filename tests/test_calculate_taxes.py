@@ -418,3 +418,65 @@ class TestDefineBlocks:
         with pytest.raises(ValueError, match="Invalid block: could not "
                            + "classify transaction pair"):
             calculate_taxes.define_blocks(row0, row1)
+
+@pytest.fixture(scope='function')
+def rows():
+    return pd.DataFrame({'Date': ['9/4/2024','9/4/2024', '9/4/2024', '9/4/2024'],
+                         'Asset': ['USD', 'NVDA', 'USD', 'USD'],
+                         'Amount (asset)': [-1250, 10, -5, -750],
+                         'Sell price ($)': [1, 'NaN', 1, 1],
+                         'Buy price ($)': [1, 125, 1, 1],
+                         'Account number': [1234, 1234, 1234, 1234],
+                         'Entity': ['Chase', 'Chase', 'Chase', 'Chase'],
+                         'Notes': ['', '', '', ''],
+                         'Remaining': ['', '', '', '']})
+
+class TestCheckFees:
+    @pytest.mark.parametrize(
+        "block_type, first_asset, mid_asset, last_asset, expected_error",
+        [
+            ('approved_exchange', 'feeNVDA', 'USD', 'feeUSD', None),
+            ('purchase', 'NVDA', 'USD', 'feeUSD', None),
+            ('transfer', 'NVDA', 'USD', 'feeUSD', None),
+            ("sale", "NVDA", "USD", "feeUSD", None),
+            ('purchase', 'feeNVDA', 'USD', 'feeUSD', 'extra'),
+            ('approved_exchange', 'NVDA', 'USD', 'feeUSD', 'approved'),
+            ("sale", "NVDA", "USD", "feeUS", "missing"),  # too short to count as fee
+            ('sale', 'NVDA', 'USD', 'FEED', 'missing'),
+            ('sale', 'NVDA', 'feeUSD', 'feeNVDA', 'extra'),
+        ],
+        ids=['approved_success', 'purchase_success', 'transfer_success', 'sale_success',
+             'purchase_first_is_fee', 'approved_no_first_fee', 'sale_short_fee', 'sale_FEED',
+             'sale_mid_fee']
+    )
+
+    def test_check_fees(self, rows, block_type, first_asset, mid_asset, last_asset, expected_error):
+        if block_type == 'approved_exchange':
+            n_rows = 4
+        elif block_type == 'transfer':
+            n_rows = 2
+        else:
+            n_rows = 3
+        this_rows = rows.head(n_rows).copy()
+        this_rows.loc[0, 'Asset'] = first_asset
+        if n_rows > 2:
+            this_rows.loc[1, 'Asset'] = mid_asset
+        if n_rows > 3:
+            this_rows.loc[2, 'Asset'] = mid_asset
+        this_rows.loc[this_rows.index[-1], 'Asset'] = last_asset
+        if not expected_error:
+            assert calculate_taxes.check_fees(block_type, this_rows) is None
+        elif expected_error == 'approved':
+            with pytest.raises(ValueError, match="Invalid block: missing approval fee"):
+                calculate_taxes.check_fees(block_type, this_rows)
+        elif expected_error == 'missing':
+            with pytest.raises(ValueError, match="Invalid block: missing fee"):
+                calculate_taxes.check_fees(block_type, this_rows)
+        elif expected_error == 'extra':
+            with pytest.raises(ValueError, match="Invalid block: extra fee"):
+                calculate_taxes.check_fees(block_type, this_rows)
+
+    def test_check_fees_empty_df(self):
+        this_rows = pd.DataFrame()
+        with pytest.raises(ValueError, match="Empty dataframe."):
+            calculate_taxes.check_fees('purchase', this_rows)
