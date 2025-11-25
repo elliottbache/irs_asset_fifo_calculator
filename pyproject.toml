@@ -21,7 +21,9 @@ classifiers = [
 ]
 
 # Runtime deps (if any); empty is fine if you're stdlib-only
-dependencies = []
+dependencies = [
+  "pandas>=2.0",  # or whatever min version you need
+]
 
 # Optional extras for dev tools
 [project.optional-dependencies]

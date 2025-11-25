@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from datetime import datetime, timedelta
 from irs_asset_fifo_calculator import (calculate_taxes)
-from collections import deque, defaultdict
+from collections import deque
 
 
 # helpers
