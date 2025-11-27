@@ -1,19 +1,34 @@
 import pandas as pd
 import pytest
-from datetime import datetime, timedelta
+from datetime import date, timedelta
+
+from docutils.nodes import row
 from irs_asset_fifo_calculator import (calculate_taxes)
 from collections import deque
 
+from src.irs_asset_fifo_calculator.calculate_taxes import AssetData
 
 # helpers
-"""
-class FakeCompleted:
-    def __init__(self, stdout="", stderr="", returncode=0):
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode = returncode
-"""
+def data_is_equalish(data, expected):
+    assert data.asset == expected.asset
+    assert data.amount == pytest.approx(expected.amount, rel=1e-6)
+    assert data.price == pytest.approx(expected.price, rel=1e-6)
+    assert data.total == pytest.approx(expected.total, rel=1e-6)
+    assert data.tx_date == expected.tx_date
 
+def compare_parsed_rows(block_type: str, rows: pd.DataFrame, expected: tuple[AssetData, AssetData, AssetData]) -> None:
+    buy_data, sell_data, fee_data = calculate_taxes.parse_row_data(block_type, rows)
+    data_is_equalish(buy_data, expected[0])
+    data_is_equalish(sell_data, expected[1])
+    data_is_equalish(fee_data, expected[2])
+    if block_type == 'transfer':
+        assert buy_data.asset is None
+        assert sell_data.asset is None
+
+DEFAULT_TX_DATE = date(2024, 9, 4)
+
+def AD(asset, amount, price, total, tx_date=DEFAULT_TX_DATE) -> AssetData:
+    return AssetData(asset=asset, amount=amount, price=price, total=total, tx_date=tx_date)
 
 # unit tests
 @pytest.fixture(scope="function")
@@ -45,11 +60,11 @@ def cost_basis():
 
 @pytest.fixture(scope="function")
 def acquisition_date():
-    return datetime(2024, 1, 1)
+    return date(2024, 1, 1)
 
 @pytest.fixture(scope="function")
 def sale_date():
-    return datetime(2024, 12, 31)
+    return date(2024, 12, 31)
 
 class TestRecordSale:
     def test_record_sale_success(self, form8949, asset, amount, proceeds,
@@ -163,7 +178,7 @@ class TestRecordSale:
         acquisition_date = "2024/31/10"
 
         with pytest.raises(TypeError, match="Acquisition date must be "
-                                            + "in datetime format."):
+                                            + "in date format."):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
 
@@ -172,7 +187,7 @@ class TestRecordSale:
         sale_date = "2024/31/10"
 
         with pytest.raises(TypeError, match="Sale date must be "
-                                            + "in datetime format."):
+                                            + "in date format."):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
 
@@ -215,14 +230,14 @@ class TestRecordSale:
 
 @pytest.fixture(scope="function")
 def fifo():
-    return {'NVDA': deque([{"amount": 10, "price": 10, "cost": 100,
-                            "timestamp": datetime(2024, 1, 1)},
-                           {"amount": 5, "price": 11,
-                            "cost": (5 * 11) * 1.002,
-                            "timestamp": datetime(2024, 2, 1)},
-                           {"amount": 2, "price": 8,
-                            "cost": (2 * 8) * 1.002,
-                            "timestamp": datetime(2024, 3, 1)}])
+    return {'NVDA': deque([{"amount": 10, "price": 100, "cost": 1000,
+                            "tx_date": date(2024, 1, 1)},
+                           {"amount": 5, "price": 110,
+                            "cost": (5 * 110) * 1.002,
+                            "tx_date": date(2024, 2, 1)},
+                           {"amount": 2, "price": 80,
+                            "cost": (2 * 80) * 1.002,
+                            "tx_date": date(2024, 3, 1)}])
             }
 
 class TestUpdateFifo:
@@ -230,51 +245,53 @@ class TestUpdateFifo:
     @pytest.mark.parametrize(
         "sell_amount, expected",
         [
-            (10, {'length': 2, 'amount': 5, 'price': 11, 'cost': (5 * 11) * 1.002,
-                  "timestamp": datetime(2024, 2, 1)}),
-            (9, {'length': 3, 'amount': 10 - 9, 'price': 10, 'cost': 100 * (10 - 9) / 10,
-                 "timestamp": datetime(2024, 1, 1)}),
-            (15, {'length': 1, 'amount': 10 + 5 - 15 + 2, 'price': 8, 'cost': (2 * 8) * 1.002,
-                  "timestamp": datetime(2024, 3, 1)}),
-            (0, {'length': 3, 'amount': 10, 'price': 10, 'cost': 100,
-                 "timestamp": datetime(2024, 1, 1)}),
-            (-1, {'length': 3, 'amount': 10 - 1, 'price': 10, 'cost': 100 * (10 - 1) / 10,
-                  "timestamp": datetime(2024, 1, 1)}),
-            (0.00000001, {'length': 3, 'amount': 10 - 0.00000001, 'price': 10, 'cost': 100 * (10 - 0.00000001) / 10,
-                          "timestamp": datetime(2024, 1, 1)})
+            (10, {'length': 2, 'amount': 5, 'price': 110, 'cost': (5 * 110) * 1.002,
+                  "tx_date": date(2024, 2, 1)}),
+            (9, {'length': 3, 'amount': 10 - 9, 'price': 100, 'cost': 1000 * (10 - 9)/10,
+                 "tx_date": date(2024, 1, 1)}),
+            (15, {'length': 1, 'amount': 10 + 5 - 15 + 2, 'price': 80, 'cost': (2 * 80) * 1.002,
+                  "tx_date": date(2024, 3, 1)}),
+            (0, {'length': 3, 'amount': 10, 'price': 100, 'cost': 1000,
+                 "tx_date": date(2024, 1, 1)}),
+            (-1, {'length': 3, 'amount': 10 - 1, 'price': 100, 'cost': 1000 * (10 - 1) / 10,
+                  "tx_date": date(2024, 1, 1)}),
+            (0.00000001, {'length': 3, 'amount': 10 - 0.00000001, 'price': 100, 'cost': 1000 * (10 - 0.00000001) / 10,
+                          "tx_date": date(2024, 1, 1)})
         ],
         ids=["sell-10", "sell-9", "sell-15", "sell-0", "sell-neg1", "sell-tiny"]
     )
 
     def test_update_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
         form8949 = list()
-        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo, 100,
-                                    datetime(2024, 4, 1))
+        sell_price = 150
+        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo, sell_amount*sell_price,
+                                    date(2024, 4, 1))
         assert len(fifo[asset]) == expected['length']
         assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], 0, 1e-6)
         assert fifo[asset][0]['price'] == pytest.approx(expected['price'], 0, 1e-6)
         assert fifo[asset][0]['cost'] == pytest.approx(expected['cost'], 0, 1e-6)
-        assert fifo[asset][0]['timestamp'] == expected['timestamp']
+        assert fifo[asset][0]['tx_date'] == expected['tx_date']
 
         if expected['length'] == 3:
             # check that 2nd and 3rd lost remain unchanged
             assert fifo[asset][1]['amount'] == pytest.approx(5, 1e-6, 0)
-            assert fifo[asset][1]['price'] == pytest.approx(11, 1e-6, 0)
-            assert fifo[asset][1]['cost'] == pytest.approx((5 * 11) * 1.002, 1e-6, 0)
-            assert fifo[asset][1]['timestamp'] == datetime(2024, 2, 1)
+            assert fifo[asset][1]['price'] == pytest.approx(110, 1e-6, 0)
+            assert fifo[asset][1]['cost'] == pytest.approx((5 * 110) * 1.002, 1e-6, 0)
+            assert fifo[asset][1]['tx_date'] == date(2024, 2, 1)
             assert fifo[asset][2]['amount'] == pytest.approx(2, 1e-6, 0)
-            assert fifo[asset][2]['price'] == pytest.approx(8, 1e-6, 0)
-            assert fifo[asset][2]['cost'] == pytest.approx((2 * 8) * 1.002, 1e-6, 0)
-            assert fifo[asset][2]['timestamp'] == datetime(2024, 3, 1)
+            assert fifo[asset][2]['price'] == pytest.approx(80, 1e-6, 0)
+            assert fifo[asset][2]['cost'] == pytest.approx((2 * 80) * 1.002, 1e-6, 0)
+            assert fifo[asset][2]['tx_date'] == date(2024, 3, 1)
 
             # check that form8949 is written correctly
-            if sell_amount > 0:
+            if sell_amount == 9 and expected == {'length': 3, 'amount': 10 - 9, 'price': 100, 'cost': 1000 * (10 - 9)/10,
+                 "tx_date": date(2024, 1, 1)}:
                 assert form8949[0]['Description'] == f"{round(sell_amount, 8):.8f}" + " " + asset
                 assert form8949[0]['Date Acquired'] == f"2024-01-01"
                 assert form8949[0]['Date Sold'] == f"2024-04-01"
-                assert form8949[0]['Proceeds'] == f"{round(100, 2):.2f}"
-                assert form8949[0]['Cost Basis'] == f"{100 - round(fifo[asset][0]['cost'], 2):.2f}"
-                assert form8949[0]['Gain or Loss'] == f"{round(100 - (100 - fifo[asset][0]['cost']), 2):.2f}"
+                assert form8949[0]['Proceeds'] == f"{round(1350, 2):.2f}"
+                assert form8949[0]['Cost Basis'] == f"{round(900, 2):.2f}"
+                assert form8949[0]['Gain or Loss'] == f"{round(450, 2):.2f}"
                 assert form8949[0]['Code'] == ""
                 assert form8949[0]['Adjustment Amount'] == ""
 
@@ -302,12 +319,12 @@ class TestUpdateFifo:
         """
         fifo[asset][0]['amount'] = 0.00001
         calculate_taxes.update_fifo([], 4, asset, fifo, 100,
-                                    datetime(2024, 4, 1))
+                                    date(2024, 4, 1))
         assert len(fifo[asset]) == 2
         assert fifo[asset][0]['amount'] == pytest.approx(1.00001, rel=0, abs=1e-8)
-        assert fifo[asset][0]['price'] == pytest.approx(11, rel=0, abs=1e-6)
-        assert fifo[asset][0]['cost'] == pytest.approx(55*1.002*1.00001/5, rel=0, abs=1e-6)
-        assert fifo[asset][0]['timestamp'] == datetime(2024, 2, 1)
+        assert fifo[asset][0]['price'] == pytest.approx(110, rel=0, abs=1e-6)
+        assert fifo[asset][0]['cost'] == pytest.approx(550*1.002*1.00001/5, rel=0, abs=1e-6)
+        assert fifo[asset][0]['tx_date'] == date(2024, 2, 1)
 
     def test_update_fifo_missing_asset(self, asset, amount, proceeds,
             sale_date, fifo):
@@ -322,7 +339,7 @@ def row0():
                       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
                       'Buy price ($)': 1.0, 'Account number': 1234,
                       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-                      'Timestamp': '2024-09-04 00:00:00'})
+                      'Tx Date': '2024-09-04'})
 
 @pytest.fixture(scope="function")
 def row1():
@@ -330,7 +347,7 @@ def row1():
                       'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
                       'Buy price ($)': 12.0, 'Account number': 1234,
                       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-                      'Timestamp': '2024-09-04 00:00:00'})
+                      'Tx Date': '2024-09-04'})
 
 class TestDefineAmounts:
 
@@ -421,36 +438,37 @@ class TestDefineBlocks:
 
 @pytest.fixture(scope='function')
 def rows():
-    return pd.DataFrame({'Date': ['9/4/2024','9/4/2024', '9/4/2024', '9/4/2024'],
-                         'Asset': ['USD', 'NVDA', 'USD', 'USD'],
-                         'Amount (asset)': [-1250, 10, -5, -750],
-                         'Sell price ($)': [1, 'NaN', 1, 1],
-                         'Buy price ($)': [1, 125, 1, 1],
-                         'Account number': [1234, 1234, 1234, 1234],
-                         'Entity': ['Chase', 'Chase', 'Chase', 'Chase'],
-                         'Notes': ['', '', '', ''],
-                         'Remaining': ['', '', '', '']})
+    return pd.DataFrame({'Date': ['9/4/2024'] * 4,
+                         'Asset': ['feeUSD', 'NVDA', 'USD', 'feeUSD'],
+                         'Amount (asset)': [-5, -10, 1250, -5],
+                         'Sell price ($)': [1, 125, float("nan"), 1],
+                         'Buy price ($)': [float("nan"), float("nan"), 1, float("nan")],
+                         'Account number': [1234] * 4,
+                         'Entity': ['Chase'] * 4,
+                         'Notes': [''] * 4,
+                         'Remaining': [''] * 4,
+                         'Tx Date': [date(2024,9,4)] * 4})
 
 class TestCheckFees:
     @pytest.mark.parametrize(
-        "block_type, first_asset, mid_asset, last_asset, expected_error",
+        "block_type, first_asset, mid_asset, last_asset, expected_match",
         [
             ('approved_exchange', 'feeNVDA', 'USD', 'feeUSD', None),
             ('purchase', 'NVDA', 'USD', 'feeUSD', None),
             ('transfer', 'NVDA', 'USD', 'feeUSD', None),
             ("sale", "NVDA", "USD", "feeUSD", None),
-            ('purchase', 'feeNVDA', 'USD', 'feeUSD', 'extra'),
-            ('approved_exchange', 'NVDA', 'USD', 'feeUSD', 'approved'),
-            ("sale", "NVDA", "USD", "feeUS", "missing"),  # too short to count as fee
-            ('sale', 'NVDA', 'USD', 'FEED', 'missing'),
-            ('sale', 'NVDA', 'feeUSD', 'feeNVDA', 'extra'),
+            ('purchase', 'feeNVDA', 'USD', 'feeUSD', 'Invalid block: extra fee'),
+            ('approved_exchange', 'NVDA', 'USD', 'feeUSD', 'Invalid block: missing approval fee'),
+            ("sale", "NVDA", "USD", "feeUS", "Invalid block: missing fee"),  # too short to count as fee
+            ('sale', 'NVDA', 'USD', 'FEED', 'Invalid block: missing fee'),
+            ('sale', 'NVDA', 'feeUSD', 'feeNVDA', 'Invalid block: extra fee'),
         ],
         ids=['approved_success', 'purchase_success', 'transfer_success', 'sale_success',
              'purchase_first_is_fee', 'approved_no_first_fee', 'sale_short_fee', 'sale_FEED',
              'sale_mid_fee']
     )
 
-    def test_check_fees(self, rows, block_type, first_asset, mid_asset, last_asset, expected_error):
+    def test_check_fees(self, rows, block_type, first_asset, mid_asset, last_asset, expected_match):
         if block_type == 'approved_exchange':
             n_rows = 4
         elif block_type == 'transfer':
@@ -464,19 +482,252 @@ class TestCheckFees:
         if n_rows > 3:
             this_rows.loc[2, 'Asset'] = mid_asset
         this_rows.loc[this_rows.index[-1], 'Asset'] = last_asset
-        if not expected_error:
+        if not expected_match:
             assert calculate_taxes.check_fees(block_type, this_rows) is None
-        elif expected_error == 'approved':
-            with pytest.raises(ValueError, match="Invalid block: missing approval fee"):
-                calculate_taxes.check_fees(block_type, this_rows)
-        elif expected_error == 'missing':
-            with pytest.raises(ValueError, match="Invalid block: missing fee"):
-                calculate_taxes.check_fees(block_type, this_rows)
-        elif expected_error == 'extra':
-            with pytest.raises(ValueError, match="Invalid block: extra fee"):
+        else:
+            with pytest.raises(ValueError, match=expected_match):
                 calculate_taxes.check_fees(block_type, this_rows)
 
     def test_check_fees_empty_df(self):
         this_rows = pd.DataFrame()
         with pytest.raises(ValueError, match="Empty dataframe."):
             calculate_taxes.check_fees('purchase', this_rows)
+
+class TestParseRowData:
+
+    # check approved_exchange path
+    @pytest.mark.parametrize(
+    "fee_asset1, fee_asset2, amount_fee_asset1, amount_fee_asset2, price_fee_asset1, price_fee_asset2, expected, expected_error, expected_error_message", [
+            ('feeUSD', 'feeUSD', -6.0, -4.0, 1.0, 1.0,
+             (AD('USD', 1240.0, 1.0, 1260.0),
+              AD('NVDA', -10.0, 125.0, 1240.0),
+              AD('USD', -10.0, 1.0,  10.0)),
+             None, ""
+            ),
+            ('feeTSLA', 'feeTSLA', -0.2, -0.3, 50.0, 50.0,
+             (AD('USD', 1250.0, 1.0, 1275.0),
+              AD('NVDA', -10.0, 125.0, 1225.0),
+              AD('TSLA', -0.5, 50.0, 25.0)),
+             None, ""
+            ),
+            ('feeUSD', 'feeNVDA', -6.0, -0.32, 1.0, 125.0, None,
+             ValueError, "Fee asset mismatch."
+             ),
+            ('feeTSLA', 'feeUSD', -0.3, -4.0, 50.0, 1.0, None,
+             ValueError, "Fee asset mismatch."
+             ),
+            ('feeTSLA', 'feeEUR', -6.0, -4.0, 50.0, 1.15, None,
+             ValueError, "Fee asset mismatch."
+             ),
+            ('USD', 'USD', -6.0, -4.0, 1.0, 1.0, None,
+             ValueError, "is not a valid fee element"
+             ),
+
+        ],
+        ids=['approved_same_fee_asset_among_trading_pair', 'approved_same_fee_asset_different_from_trading_pair',
+             'approved_different_fee_assets_same_as_trading_pair', 'approved_different_fee_assets_one_among_trading_pair',
+             'approved_different_fee_assets_different_from_trading_pair', 'approved_same_invalid_fee_asset']
+    )
+
+    def test_parse_row_data_approved(self, fee_asset1, fee_asset2, amount_fee_asset1, amount_fee_asset2, price_fee_asset1, price_fee_asset2, expected, expected_error,
+                                    expected_error_message, rows):
+        block_type = 'approved_exchange'
+        rows.loc[0, 'Asset'] = fee_asset1
+        rows.loc[3, 'Asset'] = fee_asset2
+        rows.loc[0, 'Amount (asset)'] = amount_fee_asset1
+        rows.loc[3, 'Amount (asset)'] = amount_fee_asset2
+        rows.loc[0, 'Sell price ($)'] = price_fee_asset1
+        rows.loc[3, 'Sell price ($)'] = price_fee_asset2
+
+        if expected_error is not None:
+            with pytest.raises(expected_error, match=expected_error_message):
+                calculate_taxes.parse_row_data(block_type, rows)
+        else:
+            compare_parsed_rows(block_type, rows, expected)
+
+    # check exchange path
+    @pytest.mark.parametrize(
+    "fee_asset, amount_fee_asset, price_fee_asset, buy_asset, buy_amount, buy_price, expected", [
+            ('feeUSD', -10.0, 1.0, 'TSLA', 25.0, 50.0, (
+              AD('TSLA', 25.0, 50.0, 1260.0),
+              AD('NVDA', -10.0, 125.0, 1240.0),
+              AD('USD', -10.0, 1.0, 10.0)),
+            ),
+            ('feeTSLA', -0.4, 50.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 24.6, 50.0, 1270.0),
+              AD('NVDA', -10.0, 125.0, 1230.0),
+              AD('TSLA', -0.4, 50.0, 20.0)),
+             ),
+            ('feeNVDA', -0.1, 125.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 25.0, 50.0, 1262.5),
+              AD('NVDA', -10.1, 125.0, 1237.5),
+              AD('NVDA', -0.1, 125.0, 12.5)),
+             ),
+            ('feeTSLA', -26, 50.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', -1.0, 50.0, 2550.0),
+              AD('NVDA', -10.0, 125.0, -50.0),
+              AD('TSLA', -26.0, 50.0, 1300.0)),
+             ),
+        ],
+        ids=['exchange_different_fee_asset', 'exchange_same_fee_asset_as_buy',
+             'exchange_same_fee_asset_as_sale', 'exchange_fee_exceeds_buy'
+             ]
+    )
+
+    def test_parse_row_data_exchange(self, fee_asset, amount_fee_asset, price_fee_asset, buy_asset, buy_amount, buy_price, expected,
+                                    rows):
+        block_type = 'exchange'
+        rows = rows.drop(0)
+        rows = rows.reset_index(drop=True)
+        rows.loc[1, 'Asset'] = buy_asset
+        rows.loc[2, 'Asset'] = fee_asset
+        rows.loc[1, 'Amount (asset)'] = buy_amount
+        rows.loc[2, 'Amount (asset)'] = amount_fee_asset
+        rows.loc[1, 'Buy price ($)'] = buy_price
+        rows.loc[2, 'Sell price ($)'] = price_fee_asset
+
+        compare_parsed_rows(block_type, rows, expected)
+
+    # check purchase path
+    @pytest.mark.parametrize(
+    "fee_asset, amount_fee_asset, price_fee_asset, buy_asset, buy_amount, buy_price, expected", [
+            ('feeUSD', -10.0, 1.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 25.0, 50.0, 1260.0),
+              AD('USD', -1260.0, 1.0, 0.0),
+              AD('USD', -10.0, 1.0, 10.0)),
+            ),
+            ('feeUSD', -1250.0, 1.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 25.0, 50.0, 2500.0),
+              AD('USD', -2500.0, 1.0, 0.0),
+              AD('USD', -1250.0, 1.0, 1250.0)),
+            ),
+            ('feeUSD', -1260.0, 1.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 25.0, 50.0, 2510.0),
+              AD('USD', -2510.0, 1.0, 0.0),
+              AD('USD', -1260.0, 1.0, 1260.0)
+              ),
+            ),
+            ('feeTSLA', -1.0, 50.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 24.0, 50.0, 1300.0),
+              AD('USD', -1250.0, 1.0, 0.0),
+              AD('TSLA', -1.0, 50.0, 50.0)
+              ),
+             ),
+            ('feeTSLA', -25.0, 50.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 0.0, 50.0, 2500.0),
+              AD('USD', -1250.0, 1.0, 0.0),
+              AD('TSLA', -25.0, 50.0, 1250.0)
+              ),
+             ),
+            ('feeTSLA', -26.0, 50.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', -1.0, 50.0, 2550.0),
+              AD('USD', -1250.0, 1.0, 0.0),
+              AD('TSLA', -26.0, 50.0, 1300.0)
+              ),
+             ),
+            ('feeNVDA', -0.2, 125.0, 'TSLA', 25.0, 50.0,
+             (AD('TSLA', 25.0, 50.0, 1275.0),
+              AD('USD', -1250.0, 1.0, 0.0),
+              AD('NVDA', -0.2, 125.0, 25.0)),
+             ),
+        ],
+        ids=['purchase_fee_asset_same_as_sell', 'purchase_fee_same_as_sell', 'purchase_fee_exceeds_sell',
+             'purchase_fee_asset_same_as_buy', 'purchase_fee_same_as_buy', 'purchase_fee_exceeds_buy',
+             'purchase_different_fee_asset'
+             ]
+    )
+
+    def test_parse_row_data_purchase(self, fee_asset, amount_fee_asset, price_fee_asset, buy_asset, buy_amount, buy_price, expected,
+                                     rows):
+        block_type = 'purchase'
+        rows = rows.drop(0)
+        rows = rows.reset_index(drop=True)
+        rows.loc[0, 'Asset'] = 'USD'
+        rows.loc[1, 'Asset'] = buy_asset
+        rows.loc[2, 'Asset'] = fee_asset
+        rows.loc[0, 'Amount (asset)'] = -buy_amount*buy_price
+        rows.loc[1, 'Amount (asset)'] = buy_amount
+        rows.loc[2, 'Amount (asset)'] = amount_fee_asset
+        rows.loc[0, 'Sell price ($)'] = 1.0
+        rows.loc[1, 'Buy price ($)'] = buy_price
+        rows.loc[2, 'Sell price ($)'] = price_fee_asset
+
+        compare_parsed_rows(block_type, rows, expected)
+
+    # check sale path
+    @pytest.mark.parametrize(
+    "fee_asset, amount_fee_asset, price_fee_asset, expected", [
+            ('feeUSD', -10.0, 1.0,
+             (AD('USD', 1240.0, 1.0, 0.0),
+              AD('NVDA', -10.0, 125.0, 1240.0),
+              AD('USD', -10.0, 1.0, 10.0)),
+            ),
+            ('feeUSD', -1260.0, 1.0,
+             (AD('USD', -10.0, 1.0, 0.0),
+              AD('NVDA', -10.0, 125.0, -10.0),
+              AD('USD', -1260.0, 1.0, 1260.0)),
+            ),
+            ('feeNVDA', -0.2, 125.0,
+             (AD('USD', 1250.0, 1.0, 0.0),
+              AD('NVDA', -10.2, 125.0, 1225.0),
+              AD('NVDA', -0.2, 125.0, 25.0)
+              ),
+             ),
+            ('feeNVDA', -11.0, 125.0,
+             (AD('USD', 1250.0, 1.0, 0.0),
+              AD('NVDA', -21.0, 125.0, -125.0),
+              AD('NVDA', -11.0, 125.0, 1375.0)
+              ),
+             ),
+        ],
+        ids=['sale_same_fee_asset_as_buy', 'sale_fee_exceeds_buy', 'sale_same_fee_asset_as_sale', 'sale_fee_exceeds_sale'
+             ]
+    )
+
+    def test_parse_row_data_sale(self, fee_asset, amount_fee_asset, price_fee_asset, expected, rows):
+        block_type = 'sale'
+        rows = rows.drop(0)
+        rows = rows.reset_index(drop=True)
+        rows.loc[2, 'Asset'] = fee_asset
+        rows.loc[2, 'Amount (asset)'] = amount_fee_asset
+        rows.loc[2, 'Sell price ($)'] = price_fee_asset
+
+        compare_parsed_rows(block_type, rows, expected)
+
+    # check transfer path
+    @pytest.mark.parametrize(
+    "fee_asset, amount_fee_asset, price_fee_asset, expected", [
+            ('feeTSLA', -0.1, 50.0,
+             (AD(None, 0.0, 0.0, 0.0),
+              AD(None, 0.0, 0.0, 0.0),
+              AD('TSLA', -0.1, 50.0, 5.0)
+              ),
+            ),
+            ('feeUSD', -10, 1.0,
+             (AD(None, 0.0, 0.0, 0.0),
+              AD(None, 0.0, 0.0, 0.0),
+              AD('USD', -10.0, 1.0, 10.0)
+              ),
+            ),
+            ('feeUSD', -1260, 1.0,
+             (AD(None, 0.0, 0.0, 0.0),
+              AD(None, 0.0, 0.0, 0.0),
+              AD('USD', -1260.0, 1.0, 1260.0)
+              ),
+            ),
+        ],
+        ids=['transfer_different_fee_asset', 'transfer_same_assets', 'transfer_fee_exceeds_buy'
+             ]
+    )
+
+    def test_parse_row_data_transfer(self, fee_asset, amount_fee_asset, price_fee_asset, expected, rows):
+        block_type = 'transfer'
+        rows = rows.drop(0)
+        rows = rows.reset_index(drop=True)
+        rows = rows.drop(0)
+        rows = rows.reset_index(drop=True)
+        rows.loc[1, 'Asset'] = fee_asset
+        rows.loc[1, 'Amount (asset)'] = amount_fee_asset
+        rows.loc[1, 'Sell price ($)'] = price_fee_asset
+
+        compare_parsed_rows(block_type, rows, expected)
