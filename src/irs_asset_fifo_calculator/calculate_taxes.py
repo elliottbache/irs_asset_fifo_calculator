@@ -524,7 +524,7 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
 
     expected_rows = {'purchase': 3, 'sale': 3, 'approved_exchange': 4, 'exchange': 3, 'transfer': 2}
     if expected_rows[block_type] != len(rows):
-        raise ValueError(f"Incorrect number of rows for {block_type} ({len(rows)}) at {first_date}")
+        raise ValueError(f"Incorrect number of rows for {block_type} ({len(rows)}) at {rows.iloc[0]['Tx Date']}")
 
     # change to date format
     raw_date = rows.iloc[0]['Tx Date']
