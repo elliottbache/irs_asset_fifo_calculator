@@ -1,8 +1,6 @@
 import pandas as pd
 import pytest
 from datetime import date, timedelta
-
-from docutils.nodes import row
 from irs_asset_fifo_calculator import (calculate_taxes)
 from collections import deque
 
