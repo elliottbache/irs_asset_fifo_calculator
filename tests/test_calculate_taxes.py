@@ -4,6 +4,8 @@ from datetime import date, timedelta
 from irs_asset_fifo_calculator import (calculate_taxes)
 from collections import deque
 
+from irs_asset_fifo_calculator.calculate_taxes import AssetData
+
 # helpers
 def data_is_equalish(data, expected):
     assert data.asset == expected.asset
