@@ -262,7 +262,7 @@ class TestUpdateFifo:
     def test_update_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
         form8949 = list()
         sell_price = 150
-        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo, sell_amount*sell_price,
+        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount*sell_price,
                                     date(2024, 4, 1))
         assert len(fifo[asset]) == expected['length']
         assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], 0, 1e-6)
@@ -298,7 +298,7 @@ class TestUpdateFifo:
         del fifo[asset][0]['amount']
         with pytest.raises(KeyError, match=r"contains an invalid"
                            + " purchase."):
-            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
     def test_update_fifo_type_error(self, asset, amount, proceeds,
@@ -306,7 +306,7 @@ class TestUpdateFifo:
         fifo[asset][0]['amount'] = 'five'
         with pytest.raises(TypeError, match=r"contains an invalid"
                            + " purchase."):
-            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
     def test_update_fifo_small_lot_amount(self, asset, fifo):
@@ -316,7 +316,7 @@ class TestUpdateFifo:
         from the 5-unit second lot + tiny first lot is 1.00001
         """
         fifo[asset][0]['amount'] = 0.00001
-        calculate_taxes.update_fifo([], 4, asset, fifo, 100,
+        calculate_taxes.update_fifo([], 4, asset, fifo[asset], 100,
                                     date(2024, 4, 1))
         assert len(fifo[asset]) == 2
         assert fifo[asset][0]['amount'] == pytest.approx(1.00001, rel=0, abs=1e-8)
@@ -327,8 +327,8 @@ class TestUpdateFifo:
     def test_update_fifo_missing_asset(self, asset, amount, proceeds,
             sale_date, fifo):
         del fifo[asset]
-        with pytest.raises(ValueError, match=f"does not contain"):
-            calculate_taxes.update_fifo([], amount, asset, fifo, proceeds,
+        with pytest.raises(KeyError, match=asset):
+            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
 @pytest.fixture(scope="function")

@@ -151,7 +151,7 @@ class FifoLot(TypedDict):
 
 def update_fifo(
         form8949: List[Dict[str, str]], sell_amount: float, asset: str,
-        fifo: DefaultDict[str, Deque[FifoLot]],
+        fifo_asset: Deque[FifoLot],
         proceeds: float,
         sale_date: date) -> None:
     """Update FIFO lots for a sale.
@@ -164,8 +164,8 @@ def update_fifo(
             holding txs.
         sell_amount (float): this sale's amount
         asset (str): this asset
-        fifo (DefaultDict[str, Deque[FifoLot]]):
-            purchases of each token defined by their amount, price,
+        fifo_asset (Deque[FifoLot]):
+            purchases for this token defined by their amount, price,
             cost, and date
         proceeds (float): this sale's proceeds
         sale_date (date): this sale's date
@@ -183,7 +183,7 @@ def update_fifo(
         ...     "cost": 100*1.002, "tx_date": date(2024, 1, 1)})
         >>> fifo['NVDA'].append({"amount": 20, "price": 11,
         ...     "cost": 210*1.002, "tx_date": date(2024, 2, 1)})
-        >>> update_fifo(form8949, 15, 'NVDA', fifo, 135,
+        >>> update_fifo(form8949, 15, 'NVDA', fifo['NVDA'], 135,
         ...     date(2024, 3, 1))
         >>> len(fifo['NVDA'])
         1
@@ -197,17 +197,14 @@ def update_fifo(
         datetime.date(2024, 2, 1)
     """
 
-    if asset not in fifo or not fifo[asset]:
-        raise ValueError(f"Fifo does not contain {asset}.")
-
     if sell_amount < 0:
         sell_amount = abs(sell_amount)
 
     remaining = sell_amount
-    while remaining > 0 and fifo[asset]:
+    while remaining > 0 and fifo_asset:
 
         # set the current lot
-        lot = fifo[asset][0]
+        lot = fifo_asset[0]
 
         # check if all necessary keys are present in fifo row
         required_keys = ['amount', 'price', 'cost', 'tx_date']
@@ -222,7 +219,7 @@ def update_fifo(
             raise TypeError(f"FIFO contains an invalid purchase. {lot}")
 
         if lot['amount'] == 0:
-            fifo[asset].popleft()
+            fifo_asset.popleft()
             continue
         elif lot['amount'] < 0:
             lot['amount'] = abs(lot['amount'])
@@ -243,7 +240,7 @@ def update_fifo(
 
         lot['amount'] -= used
         if lot['amount'] == 0:
-            fifo[asset].popleft()
+            fifo_asset.popleft()
 
         lot['cost'] -= this_cost
 
@@ -614,13 +611,24 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
 #        buy_lot: FifoLot = {"amount": buy_amount, "price": buy_price, "cost": cost, "timestamp": timestamp}
         fifo[buy_asset].append({"amount": buy_amount, "price": buy_price, "cost": cost, "timestamp": timestamp})
 
-    # ERRROR HANDLING IF THESE BECOME NEGATIVE!!
+    
+
+    # ERRROR HANDLING IF THESE BECOME NEGATIVE!! check that negative buys are taken into account
 
     if block_type in ['sale', 'exchange', 'approved_exchange']:
+
+        # CHECK THIS!! WAS COPY PASTED
+        if asset not in fifo or not fifo[asset]:
+            raise ValueError(f"Fifo does not contain {asset}.")
+    
         update_fifo(form8949, abs(sell_amount), sell_asset, fifo, proceeds, timestamp)
 
     # if fee_token is not one of the exchanged tokens, update FIFO
     if block_type == 'transfer' or (fee_asset != sell_asset and fee_asset != buy_asset and fee_asset != 'USD'):
+        # CHECK THIS!! WAS COPY PASTED
+        if asset not in fifo or not fifo[asset]:
+            raise ValueError(f"Fifo does not contain {asset}.")
+
         sell_amount = fee_amount
         proceeds = abs(fee_amount * fee_price)
         update_fifo(form8949, abs(sell_amount), fee_asset, fifo, proceeds, timestamp)"""
