@@ -280,16 +280,13 @@ def define_amounts(row0: pd.Series, row1: pd.Series) -> tuple[float, float]:
     Example:
         >>> from calculate_taxes import define_amounts
         >>> import pandas as pd
-        >>> row0 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+        >>> from datetime import date
+        >>> row0 = pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'USD',
         ...       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
-        ...       'Buy price ($)': 1.0, 'Account number': 1234,
-        ...       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-        ...       'Tx Date': '2024-09-04'})
-        >>> row1 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+        ...       'Buy price ($)': 1.0, 'Account number': 1234})
+        >>> row1 = pd.Series({'Tx Date': date(2024,9,4), 'Asset': 'NVDA',
         ...        'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
-        ...        'Buy price ($)': 12.0, 'Account number': 1234,
-        ...        'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-        ...        'Tx Date': '2024-09-04'})
+        ...        'Buy price ($)': 12.0, 'Account number': 1234})
         >>> define_amounts(row0, row1)
         (-1250.0, 10.0)
     """
@@ -312,16 +309,13 @@ def define_blocks(row0: pd.Series, row1: pd.Series) -> tuple[str, int]:
     Example:
         >>> from calculate_taxes import define_blocks
         >>> import pandas as pd
-        >>> row0 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+        >>> from datetime import date
+        >>> row0 = pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'USD',
         ...       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
-        ...       'Buy price ($)': 1.0, 'Account number': 1234,
-        ...       'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-        ...       'Tx Date': '2024-09-04'})
-        >>> row1 = pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+        ...       'Buy price ($)': 1.0, 'Account number': 1234})
+        >>> row1 = pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'NVDA',
         ...        'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
-        ...        'Buy price ($)': 12.0, 'Account number': 1234,
-        ...        'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-        ...        'Tx Date': '2024-09-04'})
+        ...        'Buy price ($)': 12.0, 'Account number': 1234})
         >>> define_blocks(row0, row1)
         ('purchase', 3)
     """
@@ -391,17 +385,13 @@ def check_fees(block_type: str, rows: pd.DataFrame) -> None:
         >>> from calculate_taxes import check_fees
         >>> import pandas as pd
         >>> block_type = 'purchase'
-        >>> rows = pd.DataFrame({'Date': ['9/4/2024','9/4/2024',
-        ...     '9/4/2024'],
+        >>> rows = pd.DataFrame({'Tx Date': [date(2024, 9, 4)] * 3,
         ...     'Asset': ['USD', 'NVDA', 'feeUSD'],
         ...     'Amount (asset)': [-1250, 10, -5],
         ...     'Sell price ($)': [1, 'NaN', 1],
         ...     'Buy price ($)': [1, 125, 1],
-        ...     'Account number': [1234, 1234, 1234],
-        ...     'Entity': ['Chase', 'Chase', 'Chase'],
-        ...     'Notes': ['', '', ''],
-        ...     'Remaining': ['', '', ''],
-        ...     'Tx Date': [date(2024, 9, 4), date(2024, 9, 4), date(2024, 9, 4)]})
+        ...     'Account number': [1234, 1234, 1234]
+        ...     })
         >>> check_fees(block_type, rows)
 
         """
@@ -499,17 +489,12 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         >>> from datetime import date
         >>> from calculate_taxes import parse_row_data
         >>> block_type = 'purchase'
-        >>> rows = pd.DataFrame({'Date': ['9/4/2024','9/4/2024',
-        ...     '9/4/2024'],
+        >>> rows = pd.DataFrame({'Tx Date': [date(2024, 9, 4)] * 3,
         ...     'Asset': ['USD', 'NVDA', 'feeUSD'],
         ...     'Amount (asset)': [-1250, 10, -10],
         ...     'Sell price ($)': [1, 'NaN', 1],
         ...     'Buy price ($)': [1, 125, 1],
-        ...     'Account number': [1234, 1234, 1234],
-        ...     'Entity': ['Chase', 'Chase', 'Chase'],
-        ...     'Notes': ['', '', ''],
-        ...     'Remaining': ['', '', ''],
-        ...     'Tx Date': [date(2024, 9, 4), date(2024, 9, 4), date(2024, 9, 4)]})
+        ...     'Account number': [1234, 1234, 1234]})
         >>> buy_data, sell_data, fee_data = parse_row_data(block_type, rows)
         >>> buy_data
         AssetData(asset='NVDA', amount=10.0, price=125.0, total=1260.0, tx_date=datetime.date(2024, 9, 4))
@@ -699,9 +684,11 @@ if __name__ == "__main__":
     file_path = "../asset_tx.csv"
     df = pd.read_csv(file_path)
     df['Tx Date'] = pd.to_datetime(df['Date']).dt.date
+    df = df[['Tx Date', 'Asset', 'Amount (asset)', 'Sell price ($)', 'Buy price ($)', 'Account number']]
 
     pd.set_option('display.max_rows', None)  # Show all rows
     pd.set_option('display.max_columns', None)  # Show all columns
+    print(f"df: {df}")
 
     # Prepare FIFO ledger for each token
     fifo = defaultdict(deque)
@@ -722,6 +709,6 @@ if __name__ == "__main__":
         idx += 1
 
 
-    print("Remove remaining and notes, etc from df")
     print("Only pass fifo[asset] to update_fifo.")
+    print("Identify approved, transfer, etc in csv")
 
