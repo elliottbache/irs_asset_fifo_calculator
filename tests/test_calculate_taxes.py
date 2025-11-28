@@ -333,19 +333,15 @@ class TestUpdateFifo:
 
 @pytest.fixture(scope="function")
 def row0():
-    return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'USD',
+    return pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'USD',
                       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
-                      'Buy price ($)': 1.0, 'Account number': 1234,
-                      'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-                      'Tx Date': '2024-09-04'})
+                      'Buy price ($)': 1.0, 'Account number': 1234})
 
 @pytest.fixture(scope="function")
 def row1():
-    return pd.Series({'Date': '5 / 22 / 2025', 'Asset': 'NVDA',
+    return pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'NVDA',
                       'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
-                      'Buy price ($)': 12.0, 'Account number': 1234,
-                      'Entity': 'Chase', 'Notes': '', 'Remaining': '',
-                      'Tx Date': '2024-09-04'})
+                      'Buy price ($)': 12.0, 'Account number': 1234})
 
 class TestDefineAmounts:
 
@@ -436,16 +432,13 @@ class TestDefineBlocks:
 
 @pytest.fixture(scope='function')
 def rows():
-    return pd.DataFrame({'Date': ['9/4/2024'] * 4,
+    return pd.DataFrame({'Tx Date': [date(2024,9,4)] * 4,
                          'Asset': ['feeUSD', 'NVDA', 'USD', 'feeUSD'],
                          'Amount (asset)': [-5, -10, 1250, -5],
                          'Sell price ($)': [1, 125, float("nan"), 1],
                          'Buy price ($)': [float("nan"), float("nan"), 1, float("nan")],
-                         'Account number': [1234] * 4,
-                         'Entity': ['Chase'] * 4,
-                         'Notes': [''] * 4,
-                         'Remaining': [''] * 4,
-                         'Tx Date': [date(2024,9,4)] * 4})
+                         'Account number': [1234] * 4
+                         })
 
 class TestCheckFees:
     @pytest.mark.parametrize(
