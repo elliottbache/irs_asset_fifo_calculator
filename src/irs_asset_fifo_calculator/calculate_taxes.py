@@ -21,6 +21,7 @@ Functions:
 """
 
 from datetime import date
+from math import isnan, isfinite
 from typing import List, Dict, DefaultDict, Deque, TypedDict, Any, Literal
 from collections import defaultdict, deque
 import numbers
@@ -90,6 +91,11 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             amount, " ", asset, "sale on ", sale_date, " is invalid."
         )
 
+    if not (is_finite_number(amount) and is_finite_number(proceeds)
+            and is_finite_number(cost_basis)):
+        raise TypeError(f"Amount, proceeds, or cost_basis is not a valid number."
+              f"\nAmount: {amount}, Proceeds: {proceeds}, Cost Basis: {cost_basis}")
+
     if not ((isinstance(amount, float) or isinstance(amount, int)) and
             (isinstance(proceeds, float) or isinstance(proceeds, int)) and
             (isinstance(cost_basis, float) or isinstance(cost_basis, int))):
@@ -125,16 +131,31 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             + " is invalid."
         )
 
+    if asset == 'CPOOL':
+        pass
+
     if proceeds >= 0.005 or cost_basis >= 0.005:
 
         form8949.append({
             "Description": f"{round(amount,8):.8f}" + " " + asset,
-            "Date Acquired": acquisition_date.strftime("%Y-%m-%d"),
-            "Date Sold": sale_date.strftime("%Y-%m-%d"),
+            "Date Acquired": acquisition_date.strftime("%m/%d/%Y"),
+            "Date Sold": sale_date.strftime("%m/%d/%Y"),
             "Proceeds": f"{round(proceeds,2):.2f}",
             "Cost Basis": f"{round(cost_basis,2):.2f}",
             "Gain or Loss": f"{round(proceeds - cost_basis,2):.2f}"
         })
+
+def is_finite_number(x) -> bool:
+    # 1) Is it a numeric type? (int, float, Decimal, Fraction, etc.)
+    if not isinstance(x, numbers.Number):
+        return False
+
+    # Optional: exclude bool, since bool is a subclass of int
+    if isinstance(x, bool):
+        return False
+
+    # 2) Is it finite (not NaN, +inf, -inf)?
+    return isfinite(float(x))
 
 class FifoLot(TypedDict):
     amount: float
@@ -205,11 +226,11 @@ def reduce_fifo(
             raise KeyError(f"FIFO contains an invalid purchase. {lot}")
 
         # check if all data is the right type
-        if not isinstance(lot['amount'], numbers.Number) \
-                or not isinstance(lot['price'], numbers.Number) \
-                or not isinstance(lot['cost'], numbers.Number) \
-                or not isinstance(lot['tx_date'], date):
-            raise TypeError(f"FIFO contains an invalid purchase. {lot}")
+        if not (is_finite_number(lot['amount']) \
+                and is_finite_number(lot['price']) \
+                and is_finite_number(lot['cost']) \
+                and isinstance(lot['tx_date'], date)):
+            raise TypeError(f"FIFO contains an invalid purchase: {lot}. ")
 
         if lot['amount'] == 0:
             fifo_asset.popleft()
@@ -227,6 +248,8 @@ def reduce_fifo(
         this_cost = used / lot['amount'] * lot['cost']
 
         this_proceeds = used / sell_amount * proceeds
+        if asset == 'CPOOL':
+            pass
 
         record_sale(form8949, asset, used, this_proceeds, this_cost,
                     acquisition_date, sale_date)
@@ -339,8 +362,9 @@ def define_blocks(row0: pd.Series, row1: pd.Series) -> tuple[str, int]:
         n_tx = 3
     else:
         raise ValueError(f"Invalid block: could not classify transaction pair"
-                         "\naccount0: {account0}\nasset0: {asset0} amount0: {amount0}"
-                         "\nasset1: {asset1} amount1: {amount1}")
+                         f"\nDate0: {row0['Tx Date']}, Date1: {row1['Tx Date']}"
+                         f"\naccount0: {account0}\nasset0: {asset0} amount0: {amount0}"
+                         f"\nasset1: {asset1} amount1: {amount1}")
 
     return block_type, n_tx
 
@@ -551,6 +575,8 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         sell_amount = parse_amount(rows.iloc[sell_idx]['Amount (asset)'])
         sell_price = parse_amount(rows.iloc[sell_idx]['Sell price ($)'])
         sell_asset = rows.iloc[sell_idx]['Asset']
+    if sell_asset == 'USD':
+        sell_price = 1.0
 
     # identify row with buy data
     if block_type in ['purchase', 'exchange', 'sale']:
@@ -569,9 +595,18 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         buy_asset = rows.iloc[buy_idx]['Asset']
         buy_amount = parse_amount(rows.iloc[buy_idx]['Amount (asset)'])
         buy_price = parse_amount(rows.iloc[buy_idx]['Buy price ($)'])
+    if buy_asset == 'USD':
+        buy_price = 1.0
 
     if buy_asset is not None and buy_asset == sell_asset:
         raise ValueError("Buy and sell asset cannot be the same.")
+
+    # in case we are missing the fee price
+    if block_type != 'transfer':
+        if fee_asset == buy_asset:
+            fee_price = buy_price
+        if fee_asset == sell_asset:
+            fee_price = sell_price
 
     # define proceeds using USD amounts when available, otherwise use sell data
     # proceeds are 0 for transfers and purchases (USD doesn't give gains)
@@ -593,9 +628,13 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
     if block_type != 'transfer':
         if fee_asset == buy_asset:
             buy_amount -= abs(fee_amount)
+            fee_price = buy_price
         if fee_asset == sell_asset:
             sell_amount -= abs(fee_amount)
+            fee_price = sell_price
 
+    if sell_asset == 'CPOOL':
+        pass
     buy_data = AssetData(asset=buy_asset, amount = float(buy_amount), price=float(buy_price), total=float(cost), tx_date=first_date)
     sell_data = AssetData(asset=sell_asset, amount=float(sell_amount), price=float(sell_price), total=float(proceeds), tx_date=first_date)
     fee_data = AssetData(asset=fee_asset, amount=float(fee_amount), price=float(fee_price), total=abs(float(fee_amount*fee_price)), tx_date=first_date)
@@ -641,8 +680,9 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData, 
 if __name__ == "__main__":
 
     # Load your file from the project root folder
-    file_path = "../asset_tx.csv"
-    df = pd.read_csv(file_path)
+    input_file_path = "../asset_tx.csv"
+    output_file_path = "../form8949_output.csv"
+    df = pd.read_csv(input_file_path)
 
     # create Tx Date column with date format (instead of datetime) and
     # only keep pertinent columns
@@ -679,7 +719,11 @@ if __name__ == "__main__":
         # update FIFO and form8949
         update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
 
-        idx += 1
+        idx += n_tx
+
+    # Create .csv with output for f8949
+    pd.DataFrame(form8949).to_csv(output_file_path, index=False)
+    print("✅ Form 8949 data saved to "+output_file_path)
 
     print("Remove adjustment amount and code until end")
     print("Add parentheses for negatives")
