@@ -8,6 +8,13 @@ import copy
 from typing import Deque, List, Dict
 
 # helpers
+def make_row(asset, amount, tx_date=date(2024, 9, 4), sell='NaN', buy='NaN', account="1234"):
+    return {"Tx Date": tx_date, "Asset": asset,
+            "Amount (asset)": amount,
+            "Sell price ($)": sell,
+            "Buy price ($)": buy,
+            "Account number": account}
+
 def data_is_equalish(data, expected):
     assert data.asset == expected.asset
     assert data.amount == pytest.approx(expected.amount, rel=1e-6)
@@ -40,14 +47,14 @@ def is_fifo_correct(fifo_asset: Deque[FifoLot],
     cost_abs: float = 1e-2,
     price_abs: float = 1e-2,
 ) -> bool:
-    message = f"FIFO for this asset does not match.\n"
-    f"Expected length={expected_len}, Amount={pytest.approx(amount, amount_abs)}, "
-    f"Cost={pytest.approx(cost, cost_abs)}, Price≈{pytest.approx(price, price_abs)}, "
-    f"Tx Date≈{tx_date}\n"
-    f"Actual FIFO for this asset: {fifo_asset}"
-    if len(fifo_asset) != expected_len or fifo_asset[idx]["amount"] != pytest.approx(amount, amount_abs) or \
-            fifo_asset[idx]["cost"] != pytest.approx(cost, cost_abs) or \
-            fifo_asset[idx]["price"] != pytest.approx(price, price_abs) or \
+    message = (f"FIFO for this asset does not match.\n" +
+    f"Expected length: {expected_len}, Amount: {pytest.approx(amount, abs=amount_abs)}, " +
+    f"Cost: {pytest.approx(cost, abs=cost_abs)}, Price: {pytest.approx(price, abs=price_abs)}, " +
+    f"Tx Date: {tx_date}\n" +
+    f"Actual FIFO for this asset: {fifo_asset[idx]}")
+    if len(fifo_asset) != expected_len or fifo_asset[idx]["amount"] != pytest.approx(amount, abs=amount_abs) or \
+            fifo_asset[idx]["cost"] != pytest.approx(cost, abs=cost_abs) or \
+            fifo_asset[idx]["price"] != pytest.approx(price, abs=price_abs) or \
             fifo_asset[idx]["tx_date"] != tx_date:
         print(message)
         return False
@@ -63,15 +70,14 @@ def does_form_contain_row(form8949, description, date_acquired, date_sold, proce
         if float(row["Proceeds"]) != pytest.approx(proceeds, abs=1e-2): continue
         if float(row["Cost Basis"]) != pytest.approx(cost_basis, abs=1e-2): continue
         if float(row["Gain or Loss"]) != pytest.approx(gain_or_loss, abs=1e-2): continue
-        if row["Code"] != "": continue
-        if row["Adjustment Amount"] != "": continue
         return True
 
     print(f"No matching Form 8949 row found.\n"
     f"Expected Description={description}, Date Acquired={date_acquired}, "
     f"Date Sold={date_sold}, Proceeds≈{proceeds}, Cost Basis≈{cost_basis}, "
-    f"Gain/Loss≈{gain_or_loss}\n"
+    f"Gain or Loss≈{gain_or_loss}\n"
     f"Actual rows: {form8949}")
+
     return False
 
 def reduce_lot1(form8949: List[Dict[str, str]],
@@ -125,9 +131,7 @@ def form8949():
             "Date Sold": "2024-01-01",
             "Proceeds": "10000.00",
             "Cost Basis": "1000.00",
-            "Gain or Loss": "9000.00",
-            "Code": "",
-            "Adjustment Amount": ""}]
+            "Gain or Loss": "9000.00"}]
 
 @pytest.fixture(scope="function")
 def asset():
@@ -165,8 +169,6 @@ class TestRecordSale:
         assert  form8949[1]["Proceeds"] == "120.00"
         assert  form8949[1]["Cost Basis"] == "100.00"
         assert  form8949[1]["Gain or Loss"] == "20.00"
-        assert  form8949[1]["Code"] == ""
-        assert  form8949[1]["Adjustment Amount"] == ""
 
     def test_record_sale_small_proceeds_and_cost_basis(self, form8949, asset,
                 amount, acquisition_date, sale_date):
@@ -396,8 +398,6 @@ class TestUpdateFifo:
                 assert form8949[0]['Proceeds'] == f"{round(1350, 2):.2f}"
                 assert form8949[0]['Cost Basis'] == f"{round(900, 2):.2f}"
                 assert form8949[0]['Gain or Loss'] == f"{round(450, 2):.2f}"
-                assert form8949[0]['Code'] == ""
-                assert form8949[0]['Adjustment Amount'] == ""
 
     def test_reduce_fifo_missing_key(self, asset, amount, proceeds,
             sale_date, fifo):
@@ -941,14 +941,9 @@ class TestUpdateFifo:
                                     expected_behavior):
 
         original_fifo = copy.deepcopy(fifo)
-        print(f"\noriginal_fifo: {original_fifo}")
         original_form8949 = copy.deepcopy(form8949)
 
-        print(f"\nbuy_data: {buy_data}")
-        print(f"sell_data: {sell_data}")
-        print(f"fee_data: {fee_data}")
         calculate_taxes.update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
-        print(f"fifo: {fifo}")
 
         if expected_behavior == 'reduce_fee_lot':
             reduce_lot1(form8949, fee_data, fifo[fee_data.asset], original_fifo[fee_data.asset])
@@ -958,7 +953,125 @@ class TestUpdateFifo:
 
         assert form8949[0] == original_form8949[0]
 
-"""class TestIntegration():
+class TestIntegration():
     @pytest.mark.parametrize(
-        ""
-    )"""
+        "rows, expected_len_fifo, expected_len_form8949, expected_first_fifo, "
+        "expected_last_form",
+        [
+            (
+                [
+                    make_row('USD', -1225.0, sell=1.0, buy=1.0),
+                    make_row('NVDA', 9.8, sell=125.0, buy=1.0),
+                    make_row('feeNVDA', -0.1, buy=125.0),
+                    make_row('NVDA', -150.0, buy=125.0),
+                    make_row('USD', -10000.0, buy=15.0),
+                ], {'NVDA': 4, 'TSLA': 3, 'AMZN': 3}, 1,
+             {'NVDA': {"amount": 10, "price": 100, "cost": 1000,
+                            "tx_date": date(2024, 1, 1)},
+              'TSLA': {"amount": 25, "price": 50, "cost": 1250,
+                            "tx_date": date(2024, 1, 2)},
+              'AMZN': {"amount": 25, "price": 400, "cost": 10000,
+                            "tx_date": date(2024, 1, 3)}},
+             {"Description": "10.00000000 NVDA", "Date Acquired": "1982-10-27",
+              "Date Sold": "2024-01-01", "Proceeds": "10000.00",
+              "Cost Basis": "1000.00", "Gain or Loss": "9000.00"}
+            ),
+            (
+                [
+                    make_row('NVDA', -10.8, sell=125.0, buy=120.0),
+                    make_row('USD', 1350.0, buy=1.0),
+                    make_row('feeUSD', -10.0, sell=1.0),
+                    make_row('NVDA', -150.0, buy=125.0),
+                    make_row('USD', -10000.0, buy=15.0),
+                ], {'NVDA': 2, 'TSLA': 3, 'AMZN': 3}, 3,
+             {'NVDA': {"amount": 4.2, "price": 110, "cost": (4.2 * 110) * 1.002,
+                       "tx_date": date(2024, 2, 1)},
+              'TSLA': {"amount": 25, "price": 50, "cost": 1250,
+                            "tx_date": date(2024, 1, 2)},
+              'AMZN': {"amount": 25, "price": 400, "cost": 10000,
+                            "tx_date": date(2024, 1, 3)}},
+             {"Description": "0.80000000 NVDA", "Date Acquired": "2024-02-01",
+              "Date Sold": "2024-09-04", "Proceeds": "99.26",
+              "Cost Basis": "88.18", "Gain or Loss": "11.08"}
+            ),
+            (
+                [
+                    make_row('NVDA', 10.8, account='1234-8795'),
+                    make_row('feeNVDA', -0.1, sell=123.0),
+                    make_row('NVDA', -150.0, buy=125.0),
+                    make_row('USD', -10000.0, buy=15.0),
+                    make_row('USD', -10000.0, buy=15.0),
+                ], {'NVDA': 3, 'TSLA': 3, 'AMZN': 3}, 2,
+                {'NVDA': {"amount": 9.9, "price": 100, "cost": 990.0,
+                       "tx_date": date(2024, 1, 1)},
+              'TSLA': {"amount": 25, "price": 50, "cost": 1250,
+                       "tx_date": date(2024, 1, 2)},
+              'AMZN': {"amount": 25, "price": 400, "cost": 10000,
+                       "tx_date": date(2024, 1, 3)}},
+             {"Description": "0.10000000 NVDA", "Date Acquired": "2024-01-01",
+              "Date Sold": "2024-09-04", "Proceeds": "12.30",
+              "Cost Basis": "10.00", "Gain or Loss": "2.30"}
+            ),
+            (
+                [
+                    make_row('feeTSLA', -6.0, sell=49.0, account='Approved'),
+                    make_row('NVDA', -11.95121951, sell=123.0, account='Approved'),
+                    make_row('TSLA', 20.0, buy=49.0, account='Approved'),
+                    make_row('feeTSLA', -4.0, sell=49.0, account='Approved'),
+                    make_row('USD', -10000.0, buy=15.0),
+                ], {'NVDA': 2, 'TSLA': 4, 'AMZN': 3}, 3,
+             {'NVDA': {"amount": 3.048780488, "price": 110, "cost": 336.04,
+                       "tx_date": date(2024, 2, 1)},
+              'TSLA': {"amount": 25, "price": 50, "cost": 1250,
+                       "tx_date": date(2024, 1, 2)},
+              'AMZN': {"amount": 25, "price": 400, "cost": 10000,
+                       "tx_date": date(2024, 1, 3)}},
+             {"Description": "10.00000000 NVDA", "Date Acquired": "2024-01-01",
+              "Date Sold": "2024-09-04", "Proceeds": "820.00",
+              "Cost Basis": "1000.00", "Gain or Loss": "-180.00"}
+            ),
+            (
+                [
+                    make_row('NVDA', -9.56097561, sell=123.0, account='Approved'),
+                    make_row('TSLA', 20.0, buy=49.0, account='Approved'),
+                    make_row('feeTSLA', -4.0, sell=49.0, account='Approved'),
+                    make_row('USD', -10000.0, buy=15.0),
+                ], {'NVDA': 3, 'TSLA': 4, 'AMZN': 3}, 2,
+             {'NVDA': {"amount": 0.43902439, "price": 100, "cost": 43.90,
+                       "tx_date": date(2024, 1, 1)},
+              'TSLA': {"amount": 25, "price": 50, "cost": 1250,
+                       "tx_date": date(2024, 1, 2)},
+              'AMZN': {"amount": 25, "price": 400, "cost": 10000,
+                       "tx_date": date(2024, 1, 3)}},
+             {"Description": "9.56097561 NVDA", "Date Acquired": "2024-01-01",
+              "Date Sold": "2024-09-04", "Proceeds": "980.00",
+              "Cost Basis": "956.10", "Gain or Loss": "23.90"}
+            ),
+        ],
+        ids = ['purchase', 'sale', 'transfer', 'approved_exchange', 'exchange']
+    )
+
+    def test_integration(self, fifo, form8949, rows,
+                         expected_len_fifo, expected_len_form8949,
+                         expected_first_fifo, expected_last_form):
+
+        # define block type and number of transactions for this type
+        block_type, n_tx = calculate_taxes.define_blocks(pd.Series(rows[0]), pd.Series(rows[1]))
+
+        # extract buy, sell, and fee info from rows
+        df = pd.DataFrame(rows)
+        buy_data, sell_data, fee_data = calculate_taxes.parse_row_data(block_type, df.iloc[0:n_tx])
+
+        # update FIFO and form8949
+        calculate_taxes.update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
+
+        for asset in [ 'NVDA', 'TSLA', 'AMZN' ]:
+            assert is_fifo_correct(fifo[asset], 0, expected_len_fifo[asset],
+                expected_first_fifo[asset]['amount'], expected_first_fifo[asset]['cost'],
+                expected_first_fifo[asset]['price'], expected_first_fifo[asset]['tx_date'])
+
+        assert len(form8949) == expected_len_form8949
+        assert does_form_contain_row(form8949, expected_last_form['Description'], expected_last_form['Date Acquired'],
+                                     expected_last_form['Date Sold'], float(expected_last_form['Proceeds']),
+                                     float(expected_last_form['Cost Basis']), float(expected_last_form['Gain or Loss']))
+

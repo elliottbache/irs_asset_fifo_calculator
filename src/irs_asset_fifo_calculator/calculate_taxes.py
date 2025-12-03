@@ -26,6 +26,7 @@ from collections import defaultdict, deque
 import numbers
 import pandas as pd
 from dataclasses import dataclass
+import sys
 
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
                 proceeds: float, cost_basis: float, acquisition_date: date,
@@ -58,9 +59,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         ...     "Date Sold": "2024-12-31",
         ...     "Proceeds": "10000",
         ...     "Cost Basis": "1000",
-        ...     "Gain or Loss": "9000",
-        ...     "Code": "",
-        ...     "Adjustment Amount": ""})
+        ...     "Gain or Loss": "9000"})
         >>> record_sale(form8949, "TSLA", 10, 100, 90, date(2024,1,1),
         ...     date(2024,12,31))
         >>> len(form8949)
@@ -77,10 +76,6 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         '90.00'
         >>> form8949[1]["Gain or Loss"]
         '10.00'
-        >>> form8949[1]["Code"]
-        ''
-        >>> form8949[1]["Adjustment Amount"]
-        ''
     """
 
     if not isinstance(acquisition_date, date):
@@ -138,9 +133,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Date Sold": sale_date.strftime("%Y-%m-%d"),
             "Proceeds": f"{round(proceeds,2):.2f}",
             "Cost Basis": f"{round(cost_basis,2):.2f}",
-            "Gain or Loss": f"{round(proceeds - cost_basis,2):.2f}",
-            "Code": "",
-            "Adjustment Amount": ""
+            "Gain or Loss": f"{round(proceeds - cost_basis,2):.2f}"
         })
 
 class FifoLot(TypedDict):
@@ -609,7 +602,7 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
 
     return buy_data, sell_data, fee_data
 
-def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData, form8949: List[Dict[str, str]], fifo: DefaultDict[str, Deque[FifoLot]],) -> None:
+def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData, form8949: List[Dict[str, str]], fifo: DefaultDict[str, Deque[FifoLot]]) -> None:
     """Updates FIFO dict of deques using info from this block of transactions.
 
     Args:
@@ -646,92 +639,50 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData, 
 
 
 if __name__ == "__main__":
-    """
-    asset = 'AMZN'
-    amount = 10
-    proceeds = 100
-    price = 10
-    cost_basis = 100
-    acquisition_date = datetime(2024, 1, 1)
-    sale_date = datetime.now()
-
-    try:
-        record_sale(form8949, asset, amount, proceeds, cost_basis,
-                    acquisition_date, sale_date)
-    except (KeyError, TypeError) as err:
-        print(f"Error recording sale: {err}")
-        sys.exit(1)
-
-    print(form8949)
-
-    fifo[asset].append({
-        "amount": amount,
-        "price": price,
-        "cost": cost_basis*1.002,
-        "timestamp": acquisition_date
-    })
-    fifo[asset].append({
-        "amount": amount*0.5,
-        "price": price*1.1,
-        "cost": (amount*0.5 * price*1.1)*1.002,
-        "timestamp": datetime(2024,2,1)
-    })
-    fifo[asset].append({
-        "amount": amount*0.2,
-        "price": price*0.8,
-        "cost": (amount*0.2 * price*0.8)*1.002,
-        "timestamp": datetime(2024,3,1)
-    })
-    print(fifo)
-
-    try:
-        reduce_fifo(form8949, 5, asset, fifo, 60, datetime(2024, 4, 1))
-    except (KeyError, TypeError) as err:
-        print(f"{type(err)} Error updating FIFO: {err}")
-        sys.exit(1)
-    print(fifo)
-
-    try:
-        reduce_fifo(form8949, 6, asset, fifo, 70, datetime(2024, 4, 2))
-    except (KeyError, TypeError) as err:
-        print(f"{type(err)} Error updating FIFO: {err}")
-        sys.exit(1)
-    print(fifo)
-    """
-
 
     # Load your file from the project root folder
     file_path = "../asset_tx.csv"
     df = pd.read_csv(file_path)
-    df['Tx Date'] = pd.to_datetime(df['Date']).dt.date
-    df = df[['Tx Date', 'Asset', 'Amount (asset)', 'Sell price ($)', 'Buy price ($)', 'Account number']]
 
-    pd.set_option('display.max_rows', None)  # Show all rows
+    # create Tx Date column with date format (instead of datetime) and
+    # only keep pertinent columns
+    df['Tx Date'] = pd.to_datetime(df['Date']).dt.date
+    df = df[['Tx Date', 'Asset', 'Amount (asset)', 'Sell price ($)',
+             'Buy price ($)', 'Account number']]
+
+    """pd.set_option('display.max_rows', None)  # Show all rows
     pd.set_option('display.max_columns', None)  # Show all columns
-    print(f"df: {df}")
+    print(f"df: {df}")"""
 
     # Prepare FIFO ledger for each token
     fifo = defaultdict(deque)
 
-    # Output for Form 8949
+    # Prepare output for Form 8949
     form8949 = []
 
     # Main loop
     len_df = len(df)
     idx = 0
     while idx < len_df:
-        # print(f"Processing row {idx}: {df.iloc[idx]}")
 
+        # check there are enough remaining transactions for a full block
+        if idx >= len_df - 1:
+            print("1-block transactions must be implemented.")
+            sys.exit()
 
+        # define block type and number of transactions for this type
+        block_type, n_tx = define_blocks(df.iloc[idx], df.iloc[idx + 1])
 
-        update_fifo(form8949, df, fifo, idx)
-        """if idx < len_df - 1:
-            amount0, amount1 = define_amounts(df.iloc[idx], df.iloc[idx + 1])
-        else:
-            print("1-block transactions must be implemented.")"""
-        # print(f"Amounts {amount0}, {amount1}")
+        # extract buy, sell, and fee info from rows
+        buy_data, sell_data, fee_data = parse_row_data(block_type, df.iloc[idx:idx + n_tx])
+
+        # update FIFO and form8949
+        update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
+
         idx += 1
 
+    print("Remove adjustment amount and code until end")
+    print("Add parentheses for negatives")
     print("Add test for parse_row_data:      if buy_asset is not None and buy_asset == sell_asset:")
     print("Identify approved, transfer, etc in csv")
 
