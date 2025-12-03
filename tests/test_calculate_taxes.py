@@ -2,9 +2,10 @@ import pandas as pd
 import pytest
 from datetime import date, timedelta
 from irs_asset_fifo_calculator import (calculate_taxes)
-from collections import deque
-
-from irs_asset_fifo_calculator.calculate_taxes import AssetData
+from collections import deque, defaultdict
+from irs_asset_fifo_calculator.calculate_taxes import AssetData, FifoLot
+import copy
+from typing import Deque, List, Dict
 
 # helpers
 def data_is_equalish(data, expected):
@@ -28,15 +29,103 @@ DEFAULT_TX_DATE = date(2024, 9, 4)
 def AD(asset, amount, price, total, tx_date=DEFAULT_TX_DATE) -> AssetData:
     return AssetData(asset=asset, amount=amount, price=price, total=total, tx_date=tx_date)
 
+def is_fifo_correct(fifo_asset: Deque[FifoLot],
+    idx: int,
+    expected_len: int,
+    amount: float,
+    cost: float,
+    price: float,
+    tx_date: date,
+    amount_abs: float = 1e-8,
+    cost_abs: float = 1e-2,
+    price_abs: float = 1e-2,
+) -> bool:
+    message = f"FIFO for this asset does not match.\n"
+    f"Expected length={expected_len}, Amount={pytest.approx(amount, amount_abs)}, "
+    f"Cost={pytest.approx(cost, cost_abs)}, Price≈{pytest.approx(price, price_abs)}, "
+    f"Tx Date≈{tx_date}\n"
+    f"Actual FIFO for this asset: {fifo_asset}"
+    if len(fifo_asset) != expected_len or fifo_asset[idx]["amount"] != pytest.approx(amount, amount_abs) or \
+            fifo_asset[idx]["cost"] != pytest.approx(cost, cost_abs) or \
+            fifo_asset[idx]["price"] != pytest.approx(price, price_abs) or \
+            fifo_asset[idx]["tx_date"] != tx_date:
+        print(message)
+        return False
+    else:
+        return True
+
+def does_form_contain_row(form8949, description, date_acquired, date_sold, proceeds, cost_basis, gain_or_loss):
+    """Assert a Form 8949 row matches expected values."""
+    for row in form8949:
+        if row["Description"] != description: continue
+        if row["Date Acquired"] != date_acquired: continue
+        if row["Date Sold"] != date_sold: continue
+        if float(row["Proceeds"]) != pytest.approx(proceeds, abs=1e-2): continue
+        if float(row["Cost Basis"]) != pytest.approx(cost_basis, abs=1e-2): continue
+        if float(row["Gain or Loss"]) != pytest.approx(gain_or_loss, abs=1e-2): continue
+        if row["Code"] != "": continue
+        if row["Adjustment Amount"] != "": continue
+        return True
+
+    print(f"No matching Form 8949 row found.\n"
+    f"Expected Description={description}, Date Acquired={date_acquired}, "
+    f"Date Sold={date_sold}, Proceeds≈{proceeds}, Cost Basis≈{cost_basis}, "
+    f"Gain/Loss≈{gain_or_loss}\n"
+    f"Actual rows: {form8949}")
+    return False
+
+def reduce_lot1(form8949: List[Dict[str, str]],
+    data: AssetData,
+    tx: Deque[FifoLot],
+    orig_tx: Deque[FifoLot],
+) -> None:
+
+    assert is_fifo_correct(tx, idx=0, expected_len=len(orig_tx),
+               amount=orig_tx[0]["amount"] + data.amount,
+               cost=(orig_tx[0]["amount"] + data.amount) /
+                                  (orig_tx[0]["amount"]) * orig_tx[0]['cost'],
+               price=orig_tx[0]["price"],
+               tx_date=orig_tx[0]['tx_date'])
+
+    assert does_form_contain_row(form8949, description=f"{round(abs(data.amount), 8):.8f}" + " " + data.asset,
+               date_acquired=orig_tx[0]["tx_date"].strftime("%Y-%m-%d"),
+               date_sold=data.tx_date.strftime("%Y-%m-%d"),
+               proceeds=data.total,
+               cost_basis=orig_tx[0]['cost'] * abs(data.amount) / orig_tx[0]['amount'],
+               gain_or_loss=float(data.total) - float(orig_tx[0]['cost'] * abs(data.amount) / orig_tx[0]['amount']))
+
+def remove_lot1_reduce_lot2(form8949, data, tx, orig_tx):
+
+    assert is_fifo_correct(tx, idx=0, expected_len=len(orig_tx) - 1,
+               amount=orig_tx[0]["amount"] + orig_tx[1]["amount"] + data.amount,
+               cost=(orig_tx[0]["amount"] + orig_tx[1]["amount"] + data.amount) /
+                                  orig_tx[1]["amount"] * orig_tx[1]['cost'],
+               price=orig_tx[1]["price"],
+               tx_date=orig_tx[1]['tx_date'])
+
+    assert does_form_contain_row(form8949, description=f"{round(abs(orig_tx[0]['amount']), 8):.8f}" + " " + data.asset,
+               date_acquired=orig_tx[0]["tx_date"].strftime("%Y-%m-%d"),
+               date_sold=data.tx_date.strftime("%Y-%m-%d"),
+               proceeds=abs(orig_tx[0]['amount'] / data.amount) * data.total,
+               cost_basis=orig_tx[0]['cost'],
+               gain_or_loss=float(abs(orig_tx[0]['amount'] / data.amount) * data.total) - float(orig_tx[0]['cost']))
+    assert does_form_contain_row(form8949,
+               description=f"{round(abs(orig_tx[0]['amount'] + data.amount), 8):.8f}" + " " + data.asset,
+               date_acquired=orig_tx[1]["tx_date"].strftime("%Y-%m-%d"),
+               date_sold=data.tx_date.strftime("%Y-%m-%d"),
+               proceeds=(orig_tx[0]['amount'] + data.amount) / data.amount * data.total,
+               cost_basis=abs(orig_tx[0]['amount'] + data.amount) / orig_tx[1]['amount'] * orig_tx[1]['cost'],
+               gain_or_loss=float((orig_tx[0]['amount'] + data.amount) / data.amount * data.total) - float(abs(orig_tx[0]['amount'] + data.amount) / orig_tx[1]['amount'] * orig_tx[1]['cost']))
+
 # unit tests
 @pytest.fixture(scope="function")
 def form8949():
     return [{"Description": "10.00000000 NVDA",
             "Date Acquired": "1982-10-27",
-            "Date Sold": "2024-12-31",
-            "Proceeds": "10000",
-            "Cost Basis": "1000",
-            "Gain or Loss": "9000",
+            "Date Sold": "2024-01-01",
+            "Proceeds": "10000.00",
+            "Cost Basis": "1000.00",
+            "Gain or Loss": "9000.00",
             "Code": "",
             "Adjustment Amount": ""}]
 
@@ -228,7 +317,8 @@ class TestRecordSale:
 
 @pytest.fixture(scope="function")
 def fifo():
-    return {'NVDA': deque([{"amount": 10, "price": 100, "cost": 1000,
+    to_return = defaultdict(deque)
+    to_return['NVDA'] = deque([{"amount": 10, "price": 100, "cost": 1000,
                             "tx_date": date(2024, 1, 1)},
                            {"amount": 5, "price": 110,
                             "cost": (5 * 110) * 1.002,
@@ -236,7 +326,23 @@ def fifo():
                            {"amount": 2, "price": 80,
                             "cost": (2 * 80) * 1.002,
                             "tx_date": date(2024, 3, 1)}])
-            }
+    to_return['TSLA'] = deque([{"amount": 25, "price": 50, "cost": 1250,
+                            "tx_date": date(2024, 1, 2)},
+                           {"amount": 5, "price": 60,
+                            "cost": (5 * 60) * 1.002,
+                            "tx_date": date(2024, 2, 2)},
+                           {"amount": 2, "price": 40,
+                            "cost": (2 * 40) * 1.002,
+                            "tx_date": date(2024, 3, 2)}])
+    to_return['AMZN'] = deque([{"amount": 25, "price": 400, "cost": 10000,
+                            "tx_date": date(2024, 1, 3)},
+                           {"amount": 5, "price": 500,
+                            "cost": (5 * 500) * 1.002,
+                            "tx_date": date(2024, 2, 3)},
+                           {"amount": 2, "price": 600,
+                            "cost": (2 * 600) * 1.002,
+                            "tx_date": date(2024, 3, 3)}])
+    return to_return
 
 class TestUpdateFifo:
 
@@ -259,10 +365,10 @@ class TestUpdateFifo:
         ids=["sell-10", "sell-9", "sell-15", "sell-0", "sell-neg1", "sell-tiny"]
     )
 
-    def test_update_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
+    def test_reduce_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
         form8949 = list()
         sell_price = 150
-        calculate_taxes.update_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount*sell_price,
+        calculate_taxes.reduce_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount*sell_price,
                                     date(2024, 4, 1))
         assert len(fifo[asset]) == expected['length']
         assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], 0, 1e-6)
@@ -293,30 +399,30 @@ class TestUpdateFifo:
                 assert form8949[0]['Code'] == ""
                 assert form8949[0]['Adjustment Amount'] == ""
 
-    def test_update_fifo_missing_key(self, asset, amount, proceeds,
+    def test_reduce_fifo_missing_key(self, asset, amount, proceeds,
             sale_date, fifo):
         del fifo[asset][0]['amount']
         with pytest.raises(KeyError, match=r"contains an invalid"
                            + " purchase."):
-            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
+            calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
-    def test_update_fifo_type_error(self, asset, amount, proceeds,
+    def test_reduce_fifo_type_error(self, asset, amount, proceeds,
             sale_date, fifo):
         fifo[asset][0]['amount'] = 'five'
         with pytest.raises(TypeError, match=r"contains an invalid"
                            + " purchase."):
-            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
+            calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
-    def test_update_fifo_small_lot_amount(self, asset, fifo):
+    def test_reduce_fifo_small_lot_amount(self, asset, fifo):
         """
         We reduce the tiny first lot to zero, then continue selling
         # from the second lot; the remaining amount after selling 4
         from the 5-unit second lot + tiny first lot is 1.00001
         """
         fifo[asset][0]['amount'] = 0.00001
-        calculate_taxes.update_fifo([], 4, asset, fifo[asset], 100,
+        calculate_taxes.reduce_fifo([], 4, asset, fifo[asset], 100,
                                     date(2024, 4, 1))
         assert len(fifo[asset]) == 2
         assert fifo[asset][0]['amount'] == pytest.approx(1.00001, rel=0, abs=1e-8)
@@ -324,11 +430,11 @@ class TestUpdateFifo:
         assert fifo[asset][0]['cost'] == pytest.approx(550*1.002*1.00001/5, rel=0, abs=1e-6)
         assert fifo[asset][0]['tx_date'] == date(2024, 2, 1)
 
-    def test_update_fifo_missing_asset(self, asset, amount, proceeds,
+    def test_reduce_fifo_missing_asset(self, asset, amount, proceeds,
             sale_date, fifo):
         del fifo[asset]
         with pytest.raises(KeyError, match=asset):
-            calculate_taxes.update_fifo([], amount, asset, fifo[asset], proceeds,
+            calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
 @pytest.fixture(scope="function")
@@ -722,3 +828,137 @@ class TestParseRowData:
         rows.loc[1, 'Sell price ($)'] = price_fee_asset
 
         compare_parsed_rows(block_type, rows, expected)
+
+@pytest.fixture(scope='function')
+def buy_data():
+    return AD('TSLA', 25.0, 50.0, 1260.0, date(2024, 5, 1))
+
+@pytest.fixture(scope='function')
+def sell_data():
+    return AD('NVDA', -10.0, 125.0, 1240.0, date(2024, 5, 1))
+
+@pytest.fixture(scope='function')
+def fee_data():
+    return AD('USD', -10.0, 1.0, 10.0, date(2024, 5, 1))
+
+class TestUpdateFifo:
+
+    @pytest.mark.parametrize(
+        "buy_data, sell_data, fee_data, expected_behavior",
+        [
+            (AD('TSLA', 0.0, 49.0, 10.0, date(2024, 9, 4)),
+             AD('NVDA', 0.0, 120.0, -10.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'no_change'),
+            (AD('TSLA', 25.0, 49.0, 1235.0, date(2024, 9, 4)),
+             AD('NVDA', -25.0 * 49.0 / 120.0, 120.0, 1215.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'append'),
+            (AD('TSLA', -1.0, 49.0, 2499.0, date(2024, 9, 4)),
+             AD('NVDA', -25.0 * 49.0 / 120.0, 120.0, -49.0, date(2024, 9, 4)),
+             AD('USD', -1274.0, 1.0, 1274.0, date(2024, 9, 4)), 'reduce_lot1'),
+            (AD('USD', 1225.0, 1.0, 1237.0, date(2024, 9, 4)),
+             AD('TSLA', -1225.0 * 1.0 / 49.0, 49.0, 1213.0, date(2024, 9, 4)),
+             AD('NVDA', -0.1, 120.0, 12.0, date(2024, 9, 4)), 'no_change'),
+            (AD(None, 15.0, 49.0, 747.0, date(2024, 9, 4)),
+             AD('USD', -15.0 * 49.0 / 120.0, 120.0, 723.0, date(2024, 9, 4)),
+             AD('NVDA', -0.1, 120.0, 12.0, date(2024, 9, 4)), 'no_change'),
+
+        ],
+        ids=['zero_buy', 'normal', 'negative_buy', 'USD_buy', 'None_buy']
+    )
+    def test_update_fifo_buy_branch(self, form8949, fifo, buy_data, sell_data, fee_data, expected_behavior):
+
+        original_fifo = copy.deepcopy(fifo)
+        original_form8949 = copy.deepcopy(form8949)
+        calculate_taxes.update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
+
+        if expected_behavior == 'append':
+            assert is_fifo_correct(fifo[buy_data.asset], idx=-1, expected_len=len(original_fifo[buy_data.asset]) + 1,
+                       amount=buy_data.amount, cost=buy_data.total,
+                       price=buy_data.price, tx_date=buy_data.tx_date)
+
+        elif expected_behavior == 'reduce_lot1':
+            reduce_lot1(form8949, buy_data, fifo[buy_data.asset], original_fifo[buy_data.asset])
+
+        elif expected_behavior == 'no_change':
+            assert fifo[buy_data.asset] == original_fifo[buy_data.asset]
+
+        assert form8949[0] == original_form8949[0]
+
+    @pytest.mark.parametrize(
+        "buy_data, sell_data, fee_data, expected_behavior",
+        [
+            (AD('TSLA', 0.0, 49.0, 745.0, date(2024, 9, 4)),
+             AD('NVDA', 0.0, 120.0, 725.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'no_change'),
+            (AD('TSLA', 15.0, 49.0, 745.0, date(2024, 9, 4)),
+             AD('NVDA', -15.0 * 49.0 / 120.0, 120.0, 725.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'reduce_lot1'),
+            (AD('TSLA', 26.0, 49.0, 1284.0, date(2024, 9, 4)),
+             AD('NVDA', -26.0 * 49.0 / 120.0, 120.0, 1264.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'remove_lot1_reduce_lot2'),
+            (AD('TSLA', 15.0, 49.0, 747.0, date(2024, 9, 4)),
+             AD('USD', -15.0 * 49.0 / 120.0, 120.0, 723.0, date(2024, 9, 4)),
+             AD('NVDA', -0.1, 120.0, 12.0, date(2024, 9, 4)), 'no_change'),
+            (AD('TSLA', 15.0, 49.0, 747.0, date(2024, 9, 4)),
+             AD('NVDA', -15.0 * 49.0 / 120.0 - 0.1, 120.0, 723.0, date(2024, 9, 4)),
+             AD('NVDA', -0.1, 120.0, 12.0, date(2024, 9, 4)), 'reduce_lot1'),
+
+        ],
+        ids=['zero_sell', 'normal', 'large_sell', 'USD_sell', 'sell_asset_same_as_fee_asset']
+    )
+    def test_update_fifo_sell_branch(self, form8949, fifo, buy_data, sell_data, fee_data, expected_behavior):
+
+        original_fifo = copy.deepcopy(fifo)
+        original_form8949 = copy.deepcopy(form8949)
+        calculate_taxes.update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
+
+        if expected_behavior == 'reduce_lot1':
+            reduce_lot1(form8949, sell_data, fifo[sell_data.asset], original_fifo[sell_data.asset])
+
+        elif expected_behavior == 'remove_lot1_reduce_lot2':
+            remove_lot1_reduce_lot2(form8949, sell_data, fifo[sell_data.asset], original_fifo[sell_data.asset])
+
+        elif expected_behavior == 'no_change':
+            assert fifo[sell_data.asset] == original_fifo[sell_data.asset]
+
+        assert form8949[0] == original_form8949[0]
+
+    @pytest.mark.parametrize(
+
+        "buy_data, sell_data, fee_data, expected_behavior",
+        [
+            (AD('TSLA', 25.0, 49.0, 1235.0, date(2024, 9, 4)),
+             AD('NVDA', -25.0 * 49.0 / 120.0, 120.0, 1215.0, date(2024, 9, 4)),
+             AD('USD', -10.0, 1.0, 10.0, date(2024, 9, 4)), 'no_change'),
+            (AD('TSLA', 25.0, 49.0, 1344.7, date(2024, 9, 4)),
+             AD('NVDA', -25.0 * 49.0 / 120.0, 120.0, 1105.3, date(2024, 9, 4)),
+             AD('AMZN', -0.3, 399.0, 119.7, date(2024, 9, 4)), 'reduce_fee_lot')
+        ],
+        ids=['usd_fee', 'different_fee_asset']
+
+    )
+    def test_update_fifo_fee_branch(self, form8949, fifo, buy_data, sell_data, fee_data,
+                                    expected_behavior):
+
+        original_fifo = copy.deepcopy(fifo)
+        print(f"\noriginal_fifo: {original_fifo}")
+        original_form8949 = copy.deepcopy(form8949)
+
+        print(f"\nbuy_data: {buy_data}")
+        print(f"sell_data: {sell_data}")
+        print(f"fee_data: {fee_data}")
+        calculate_taxes.update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
+        print(f"fifo: {fifo}")
+
+        if expected_behavior == 'reduce_fee_lot':
+            reduce_lot1(form8949, fee_data, fifo[fee_data.asset], original_fifo[fee_data.asset])
+
+        elif expected_behavior == 'no_change':
+            assert fifo[fee_data.asset] == original_fifo[fee_data.asset]
+
+        assert form8949[0] == original_form8949[0]
+
+"""class TestIntegration():
+    @pytest.mark.parametrize(
+        ""
+    )"""

@@ -149,7 +149,7 @@ class FifoLot(TypedDict):
     cost: float
     tx_date: date
 
-def update_fifo(
+def reduce_fifo(
         form8949: List[Dict[str, str]], sell_amount: float, asset: str,
         fifo_asset: Deque[FifoLot],
         proceeds: float,
@@ -174,7 +174,7 @@ def update_fifo(
         None
 
     Example:
-        >>> from calculate_taxes import update_fifo
+        >>> from calculate_taxes import reduce_fifo
         >>> from datetime import date
         >>> from collections import defaultdict, deque
         >>> form8949 = list()
@@ -183,7 +183,7 @@ def update_fifo(
         ...     "cost": 100*1.002, "tx_date": date(2024, 1, 1)})
         >>> fifo['NVDA'].append({"amount": 20, "price": 11,
         ...     "cost": 210*1.002, "tx_date": date(2024, 2, 1)})
-        >>> update_fifo(form8949, 15, 'NVDA', fifo['NVDA'], 135,
+        >>> reduce_fifo(form8949, 15, 'NVDA', fifo['NVDA'], 135,
         ...     date(2024, 3, 1))
         >>> len(fifo['NVDA'])
         1
@@ -577,6 +577,9 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         buy_amount = parse_amount(rows.iloc[buy_idx]['Amount (asset)'])
         buy_price = parse_amount(rows.iloc[buy_idx]['Buy price ($)'])
 
+    if buy_asset is not None and buy_asset == sell_asset:
+        raise ValueError("Buy and sell asset cannot be the same.")
+
     # define proceeds using USD amounts when available, otherwise use sell data
     # proceeds are 0 for transfers and purchases (USD doesn't give gains)
     if block_type == 'sale':
@@ -600,38 +603,47 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         if fee_asset == sell_asset:
             sell_amount -= abs(fee_amount)
 
-    buy_data = AssetData(asset = buy_asset, amount = float(buy_amount), price=float(buy_price), total=float(cost), tx_date=first_date)
+    buy_data = AssetData(asset=buy_asset, amount = float(buy_amount), price=float(buy_price), total=float(cost), tx_date=first_date)
     sell_data = AssetData(asset=sell_asset, amount=float(sell_amount), price=float(sell_price), total=float(proceeds), tx_date=first_date)
     fee_data = AssetData(asset=fee_asset, amount=float(fee_amount), price=float(fee_price), total=abs(float(fee_amount*fee_price)), tx_date=first_date)
 
     return buy_data, sell_data, fee_data
 
+def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData, form8949: List[Dict[str, str]], fifo: DefaultDict[str, Deque[FifoLot]],) -> None:
+    """Updates FIFO dict of deques using info from this block of transactions.
 
-    """if block_type in ['purchase', 'exchange', 'approved_exchange']:
-#        buy_lot: FifoLot = {"amount": buy_amount, "price": buy_price, "cost": cost, "timestamp": timestamp}
-        fifo[buy_asset].append({"amount": buy_amount, "price": buy_price, "cost": cost, "timestamp": timestamp})
+    Args:
+        buy_data (AssetData): buy info for this block of transactions
+        sell_data (AssetData): sell info for this block of transactions
+        fee_data (AssetData): fee info for this block of transactions
+        form8949 (List[Dict[str, str]]): Form 8949 list of dicts
+         holding txs.
+        fifo (DefaultDict[str, Deque[FifoLot]]):
+            purchases of each token defined by their amount, price,
+            cost, and date
 
-    
 
-    # ERRROR HANDLING IF THESE BECOME NEGATIVE!! check that negative buys are taken into account
+    Returns:
+        None
 
-    if block_type in ['sale', 'exchange', 'approved_exchange']:
+    Example:
 
-        # CHECK THIS!! WAS COPY PASTED
-        if asset not in fifo or not fifo[asset]:
-            raise ValueError(f"Fifo does not contain {asset}.")
-    
-        update_fifo(form8949, abs(sell_amount), sell_asset, fifo, proceeds, timestamp)
+    """
 
-    # if fee_token is not one of the exchanged tokens, update FIFO
-    if block_type == 'transfer' or (fee_asset != sell_asset and fee_asset != buy_asset and fee_asset != 'USD'):
-        # CHECK THIS!! WAS COPY PASTED
-        if asset not in fifo or not fifo[asset]:
-            raise ValueError(f"Fifo does not contain {asset}.")
+    if buy_data.asset is not None and buy_data.asset != 'USD':
+        if buy_data.amount > 0:
+            fifo[buy_data.asset].append({"amount": buy_data.amount, "price": buy_data.price, "cost": buy_data.total, "tx_date": buy_data.tx_date})
+        elif buy_data.amount < 0: # if fees exceed buy amount
+            reduce_fifo(form8949, abs(buy_data.amount), buy_data.asset, fifo[buy_data.asset], buy_data.total, buy_data.tx_date)
 
-        sell_amount = fee_amount
-        proceeds = abs(fee_amount * fee_price)
-        update_fifo(form8949, abs(sell_amount), fee_asset, fifo, proceeds, timestamp)"""
+    if sell_data.asset is not None and sell_data.asset != 'USD' and sell_data.amount < 0:
+        reduce_fifo(form8949, abs(sell_data.amount), sell_data.asset, fifo[sell_data.asset], sell_data.total, sell_data.tx_date)
+
+    # if they are the same, the fees are already taken into account in the buy_data and sell_data
+    if fee_data.asset is not None and fee_data.asset != sell_data.asset and fee_data.asset != buy_data.asset and fee_data.asset != 'USD':
+        reduce_fifo(form8949, abs(fee_data.amount), fee_data.asset, fifo[fee_data.asset], fee_data.total,
+                    fee_data.tx_date)
+
 
 if __name__ == "__main__":
     """
@@ -673,14 +685,14 @@ if __name__ == "__main__":
     print(fifo)
 
     try:
-        update_fifo(form8949, 5, asset, fifo, 60, datetime(2024, 4, 1))
+        reduce_fifo(form8949, 5, asset, fifo, 60, datetime(2024, 4, 1))
     except (KeyError, TypeError) as err:
         print(f"{type(err)} Error updating FIFO: {err}")
         sys.exit(1)
     print(fifo)
 
     try:
-        update_fifo(form8949, 6, asset, fifo, 70, datetime(2024, 4, 2))
+        reduce_fifo(form8949, 6, asset, fifo, 70, datetime(2024, 4, 2))
     except (KeyError, TypeError) as err:
         print(f"{type(err)} Error updating FIFO: {err}")
         sys.exit(1)
@@ -709,14 +721,17 @@ if __name__ == "__main__":
     idx = 0
     while idx < len_df:
         # print(f"Processing row {idx}: {df.iloc[idx]}")
-        if idx < len_df - 1:
+
+
+
+        update_fifo(form8949, df, fifo, idx)
+        """if idx < len_df - 1:
             amount0, amount1 = define_amounts(df.iloc[idx], df.iloc[idx + 1])
         else:
-            print("1-block transactions must be implemented.")
+            print("1-block transactions must be implemented.")"""
         # print(f"Amounts {amount0}, {amount1}")
         idx += 1
 
-
-    print("Only pass fifo[asset] to update_fifo.")
+    print("Add test for parse_row_data:      if buy_asset is not None and buy_asset == sell_asset:")
     print("Identify approved, transfer, etc in csv")
 
