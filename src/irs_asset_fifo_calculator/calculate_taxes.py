@@ -131,10 +131,13 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             + " is invalid."
         )
 
-    if asset == 'CPOOL':
-        pass
-
     if proceeds >= 0.005 or cost_basis >= 0.005:
+
+        # place negative numbers in parentheses
+        if proceeds - cost_basis < 0:
+            gain_or_loss = f"({round(abs(proceeds - cost_basis),2):.2f})"
+        else:
+            gain_or_loss = f"{round(proceeds - cost_basis,2):.2f}"
 
         form8949.append({
             "Description": f"{round(amount,8):.8f}" + " " + asset,
@@ -142,7 +145,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Date Sold": sale_date.strftime("%m/%d/%Y"),
             "Proceeds": f"{round(proceeds,2):.2f}",
             "Cost Basis": f"{round(cost_basis,2):.2f}",
-            "Gain or Loss": f"{round(proceeds - cost_basis,2):.2f}"
+            "Gain or Loss": gain_or_loss
         })
 
 def is_finite_number(x) -> bool:
@@ -248,8 +251,6 @@ def reduce_fifo(
         this_cost = used / lot['amount'] * lot['cost']
 
         this_proceeds = used / sell_amount * proceeds
-        if asset == 'CPOOL':
-            pass
 
         record_sale(form8949, asset, used, this_proceeds, this_cost,
                     acquisition_date, sale_date)
@@ -633,8 +634,6 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
             sell_amount -= abs(fee_amount)
             fee_price = sell_price
 
-    if sell_asset == 'CPOOL':
-        pass
     buy_data = AssetData(asset=buy_asset, amount = float(buy_amount), price=float(buy_price), total=float(cost), tx_date=first_date)
     sell_data = AssetData(asset=sell_asset, amount=float(sell_amount), price=float(sell_price), total=float(proceeds), tx_date=first_date)
     fee_data = AssetData(asset=fee_asset, amount=float(fee_amount), price=float(fee_price), total=abs(float(fee_amount*fee_price)), tx_date=first_date)
@@ -724,9 +723,3 @@ if __name__ == "__main__":
     # Create .csv with output for f8949
     pd.DataFrame(form8949).to_csv(output_file_path, index=False)
     print("✅ Form 8949 data saved to "+output_file_path)
-
-    print("Remove adjustment amount and code until end")
-    print("Add parentheses for negatives")
-    print("Add test for parse_row_data:      if buy_asset is not None and buy_asset == sell_asset:")
-    print("Identify approved, transfer, etc in csv")
-
