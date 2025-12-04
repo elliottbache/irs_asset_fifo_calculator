@@ -21,7 +21,7 @@ Functions:
 """
 
 from datetime import date
-from math import isnan, isfinite
+from math import isfinite
 from typing import List, Dict, DefaultDict, Deque, TypedDict, Any, Literal
 from collections import defaultdict, deque
 import numbers
@@ -56,8 +56,8 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         >>> from datetime import date
         >>> form8949 = list()
         >>> form8949.append({"Description": "10.00000000 NVDA",
-        ...     "Date Acquired": "1982-10-27",
-        ...     "Date Sold": "2024-12-31",
+        ...     "Date Acquired": "11/28/1982",
+        ...     "Date Sold": "12/31/2024",
         ...     "Proceeds": "10000",
         ...     "Cost Basis": "1000",
         ...     "Gain or Loss": "9000"})
@@ -68,9 +68,9 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         >>> form8949[1]["Description"]
         '10.00000000 TSLA'
         >>> form8949[1]["Date Acquired"]
-        '2024-01-01'
+        '01/01/2024'
         >>> form8949[1]["Date Sold"]
-        '2024-12-31'
+        '12/31/2024'
         >>> form8949[1]["Proceeds"]
         '100.00'
         >>> form8949[1]["Cost Basis"]
@@ -81,38 +81,28 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
 
     if not isinstance(acquisition_date, date):
         raise TypeError(
-            "Acquisition date must be in date format.\n"
-            + str(amount) + " " + asset + " purchase on "
-            + acquisition_date + " is invalid."
+            f"Acquisition date must be in date format.\n"
+            f"{str(amount)} {asset} purchase on {acquisition_date} is invalid."
         )
     if not isinstance(sale_date, date):
         raise TypeError(
-            "Sale date must be in date format.\n",
-            amount, " ", asset, "sale on ", sale_date, " is invalid."
+            f"Sale date must be in date format.\n"
+            f"{amount} {asset} sale on {sale_date} is invalid."
         )
 
-    if not (is_finite_number(amount) and is_finite_number(proceeds)
-            and is_finite_number(cost_basis)):
-        raise TypeError(f"Amount, proceeds, or cost_basis is not a valid number."
-              f"\nAmount: {amount}, Proceeds: {proceeds}, Cost Basis: {cost_basis}")
-
-    if not ((isinstance(amount, float) or isinstance(amount, int)) and
-            (isinstance(proceeds, float) or isinstance(proceeds, int)) and
-            (isinstance(cost_basis, float) or isinstance(cost_basis, int))):
-        raise TypeError(
-            "Amounts ($ and asset) must be in float format.\n"
-            + str(amount) + " " + asset + " sale on "
-            + sale_date.strftime("%Y-%m-%d") + " is invalid."
-        )
+    for name, value in (("amount", amount), ("proceeds", proceeds),
+                        ("cost_basis", cost_basis)):
+        if not is_finite_number(value):
+            raise TypeError(f"{name} is not a valid number: {value}.")
 
     if amount < 0:
         print("Amount must be greater than zero.\n",
               amount, " ", asset, "sale on ", sale_date, "is set as absolute.")
         amount = abs(amount)
-    if proceeds < 0:
+    """if proceeds < 0:
         print("Proceeds must be greater than zero.\n",
               amount, " ", asset, "sale on ", sale_date, "is set as absolute.")
-        proceeds = abs(proceeds)
+        proceeds = abs(proceeds)"""
     if cost_basis < 0:
         print("Cost basis must be greater than zero.\n",
               amount, " ", asset, "purchase on ", acquisition_date,
@@ -148,7 +138,8 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
             "Gain or Loss": gain_or_loss
         })
 
-def is_finite_number(x) -> bool:
+def is_finite_number(x: object) -> bool:
+    """Return True if x is a finite (non-NaN, non-infinite) real number."""
     # 1) Is it a numeric type? (int, float, Decimal, Fraction, etc.)
     if not isinstance(x, numbers.Number):
         return False
@@ -217,8 +208,11 @@ def reduce_fifo(
     if sell_amount < 0:
         sell_amount = abs(sell_amount)
 
+    EPS = 5e-9 # tolerance for remaining asset amount
+    ETA = 5e-3 # tolerance for remaining asset cost
     remaining = sell_amount
-    while remaining > 0 and fifo_asset:
+    remaining_price = 0
+    while remaining > EPS and fifo_asset:
 
         # set the current lot
         lot = fifo_asset[0]
@@ -228,21 +222,28 @@ def reduce_fifo(
         if not all(key in lot for key in required_keys):
             raise KeyError(f"FIFO contains an invalid purchase. {lot}")
 
-        # check if all data is the right type
+        for name, value in (("amount", lot['amount']), ("price", lot['price']),
+                            ("cost", lot['cost'])):
+            if not is_finite_number(value):
+                raise TypeError(f"{name} is not a valid number: {value}.")
+
+        """# check if all data is the right type
         if not (is_finite_number(lot['amount']) \
                 and is_finite_number(lot['price']) \
                 and is_finite_number(lot['cost']) \
                 and isinstance(lot['tx_date'], date)):
-            raise TypeError(f"FIFO contains an invalid purchase: {lot}. ")
+            raise TypeError(f"FIFO contains an invalid purchase: {lot}. ")"""
 
         if lot['amount'] == 0:
             fifo_asset.popleft()
             continue
         elif lot['amount'] < 0:
-            lot['amount'] = abs(lot['amount'])
+#            lot['amount'] = abs(lot['amount'])
+            raise ValueError(f"FIFO amount is negative for sale: {lot}.")
 
         if lot['cost'] < 0:
-            lot['cost'] = abs(lot['cost'])
+#            lot['cost'] = abs(lot['cost'])
+            raise ValueError(f"FIFO cost is negative for sale: {lot}.")
 
         acquisition_date = lot['tx_date']
         used = min(remaining, lot['amount'])
@@ -262,9 +263,13 @@ def reduce_fifo(
         lot['cost'] -= this_cost
 
         remaining -= used
+        remaining_price = lot['price']
+
+    assert remaining * remaining_price <= ETA, f"Remaining amount {remaining} {asset} at ${remaining_price} is greater than tolerance {ETA}."
 
 def parse_amount(value: Any) -> float:
-    """Parse amount from input.  Can be string or numeric."""
+    """Parse amount from input.  Can be string or numeric.
+    Extra whitespace is valid, $ or € signs are not."""
 
     if isinstance(value, numbers.Number):
         return float(value)
@@ -341,7 +346,7 @@ def define_blocks(row0: pd.Series, row1: pd.Series) -> tuple[str, int]:
     amount0, amount1 = define_amounts(row0, row1)
 
     # special case: Exchange with separate approval + fee row
-    if account0 == 'Approved' and asset0.startswith("fee") and len(asset0) > 3:
+    if account0 == 'Approved' and is_fee(asset0):
         block_type = 'approved_exchange'
         n_tx = 4
     # TEMP: treat account IDs with '-' as transfers
@@ -373,11 +378,9 @@ def is_fee(asset: str) -> bool:
     """Check if asset is a fee transaction.
 
     In order to be a fee, the asset must start with the letters 'fee',
-    and be longer than 5 characters.  This will help weed out assets
-    that begin with the letters fee (improbable) and do not have at
-    least another 3 letters as tickers usually have 3 or 4 letters.
+    and be longer than 3 characters.
     """
-    if asset.startswith("fee") and len(asset) > 5:
+    if asset.startswith("fee") and len(asset) > 3:
         return True
     else:
         return False
@@ -532,6 +535,9 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         first_date = raw_date.date()
     else:
         first_date = raw_date
+
+    # check that fees are in the correct rows depending on block type
+    check_fees(block_type, rows)
 
     # parse final row fee data
     fee_element = rows.iloc[-1]['Asset']
@@ -723,3 +729,12 @@ if __name__ == "__main__":
     # Create .csv with output for f8949
     pd.DataFrame(form8949).to_csv(output_file_path, index=False)
     print("✅ Form 8949 data saved to "+output_file_path)
+
+    # check against original.  Erase this later!!!
+    df_output = pd.DataFrame(form8949)
+    df_original = pd.read_csv('../form8949_output_original.csv')
+    pd.set_option('display.max_columns', None)  # Show all columns
+    df_original['Proceeds difference'] = abs(df_original['Proceeds'].astype(float) - df_output['Proceeds'].astype(float))
+    df_original['Cost Basis difference'] = abs(df_original['Cost Basis'].astype(float) - df_output['Cost Basis'].astype(float))
+    print(df_original[df_original['Proceeds difference'] > 0.05])
+    print(df_original[df_original['Cost Basis difference'] > 0.05])
