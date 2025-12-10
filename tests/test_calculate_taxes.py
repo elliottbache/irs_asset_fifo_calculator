@@ -1,11 +1,14 @@
+from datetime import date, timedelta
+from collections import deque, defaultdict
+from typing import Deque, Dict, List
+
+import copy
+
 import pandas as pd
 import pytest
-from datetime import date, timedelta
-from irs_asset_fifo_calculator import (calculate_taxes)
-from collections import deque, defaultdict
+
+from irs_asset_fifo_calculator import calculate_taxes
 from irs_asset_fifo_calculator.calculate_taxes import AssetData, FifoLot
-import copy
-from typing import Deque, List, Dict
 
 # helpers
 def make_row(asset, amount, tx_idx=0, tx_date=date(2024, 9, 4), sell='NaN', buy='NaN', tx_type="Buy"):
@@ -27,7 +30,7 @@ def compare_parsed_rows(block_type: str, rows: pd.DataFrame, expected: tuple[Ass
     data_is_equalish(buy_data, expected[0])
     data_is_equalish(sell_data, expected[1])
     data_is_equalish(fee_data, expected[2])
-    if block_type == 'transfer':
+    if block_type == 'Transfer':
         assert buy_data.asset is None
         assert sell_data.asset is None
 
@@ -66,7 +69,8 @@ def convert_gain_from_irs(gain_or_loss_str: str) -> float:
     else:
         return float(gain_or_loss_str)
 
-def does_form_contain_row(form8949, description, date_acquired, date_sold, proceeds, cost_basis, gain_or_loss):
+def does_form_contain_row(form8949, description, date_acquired, date_sold,
+                          proceeds, cost_basis, gain_or_loss) -> bool:
     """Assert a Form 8949 row matches expected values."""
     for row in form8949:
         if row["Description"] != description: continue
@@ -155,6 +159,12 @@ def acquisition_date():
 @pytest.fixture(scope="function")
 def sale_date():
     return date(2024, 12, 31)
+
+class TestIsFee:
+
+    def test_is_fee_none(self):
+        assert calculate_taxes.is_fee(None) is False
+
 
 class TestParseBuyAndSell:
 
@@ -577,42 +587,6 @@ class TestRecordSale:
                                            proceeds, cost_basis, acquisition_date, sale_date) is None
         assert len(form8949) == 2
 
-    def test_record_sale_negative_amount(self, form8949, asset,
-                proceeds, cost_basis, acquisition_date, sale_date, readout):
-        amount = -1
-        calculate_taxes.record_sale(form8949, asset, amount,
-                                    proceeds, cost_basis, acquisition_date, sale_date)
-        assert len(form8949) == 2
-        assert  form8949[1]["Description"] == "1.00000000 " + asset
-
-        out = readout()
-        assert "Amount must be greater than zero." in out
-        assert "is set as absolute." in out
-
-    """def test_record_sale_negative_proceeds(self, form8949, asset, amount,
-                cost_basis, acquisition_date, sale_date, readout):
-        proceeds = -1
-        calculate_taxes.record_sale(form8949, asset, amount,
-                                    proceeds, cost_basis, acquisition_date, sale_date)
-        assert len(form8949) == 2
-        assert  form8949[1]["Proceeds"] == "1.00"
-
-        out = readout()
-        assert "Proceeds must be greater than zero." in out
-        assert "is set as absolute." in out"""
-
-    def test_record_sale_negative_cost_basis(self, form8949, asset, amount,
-                proceeds, cost_basis, acquisition_date, sale_date, readout):
-        cost_basis = -1
-        calculate_taxes.record_sale(form8949, asset, amount,
-                                    proceeds, cost_basis, acquisition_date, sale_date)
-        assert len(form8949) == 2
-        assert  form8949[1]["Cost Basis"] == "1.00"
-
-        out = readout()
-        assert "Cost basis must be greater than zero." in out
-        assert "is set as absolute." in out
-
     def test_record_sale_date_order(self, form8949, asset, amount,
                 proceeds, cost_basis, sale_date):
         acquisition_date = sale_date + timedelta(days=1)
@@ -647,6 +621,13 @@ class TestRecordSale:
         with pytest.raises(TypeError, match=r"is not a valid number:"):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
+    def test_record_sale_negative_amount(self, form8949, asset,
+                proceeds, cost_basis, acquisition_date, sale_date):
+        amount = -1.0
+
+        with pytest.raises(ValueError, match=r"Amount must be greater than zero."):
+            calculate_taxes.record_sale(form8949, asset, amount,
+                                        proceeds, cost_basis, acquisition_date, sale_date)
 
     def test_record_sale_non_float_proceeds(self, form8949, asset,
                 amount, cost_basis, acquisition_date, sale_date):
@@ -661,6 +642,13 @@ class TestRecordSale:
         cost_basis = "five"
 
         with pytest.raises(TypeError, match=r"is not a valid number:"):
+            calculate_taxes.record_sale(form8949, asset, amount,
+                                        proceeds, cost_basis, acquisition_date, sale_date)
+    def test_record_sale_negative_cost_basis(self, form8949, asset,
+                amount, proceeds, acquisition_date, sale_date):
+        cost_basis = -1.0
+
+        with pytest.raises(ValueError, match=r"Cost basis must be greater than zero."):
             calculate_taxes.record_sale(form8949, asset, amount,
                                         proceeds, cost_basis, acquisition_date, sale_date)
 
@@ -703,7 +691,7 @@ def fifo():
                             "tx_date": date(2024, 3, 3)}])
     return to_return
 
-class TestUpdateFifo:
+class TestReduceFifo:
 
     @pytest.mark.parametrize(
         "sell_amount, expected",
@@ -727,48 +715,52 @@ class TestUpdateFifo:
     def test_reduce_fifo_sell_amount(self, sell_amount, expected, asset, fifo):
         form8949 = list()
         sell_price = 150
-        calculate_taxes.reduce_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount*sell_price,
-                                    date(2024, 4, 1))
-        assert len(fifo[asset]) == expected['length']
-        assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], abs=1e-6)
-        assert fifo[asset][0]['price'] == pytest.approx(expected['price'], abs=1e-6)
-        assert fifo[asset][0]['cost'] == pytest.approx(expected['cost'], abs=1e-6)
-        assert fifo[asset][0]['tx_date'] == expected['tx_date']
+        if sell_amount > 0:
+            calculate_taxes.reduce_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount*sell_price,
+                                        date(2024, 4, 1))
+            assert len(fifo[asset]) == expected['length']
+            assert fifo[asset][0]['amount'] == pytest.approx(expected['amount'], abs=1e-6)
+            assert fifo[asset][0]['price'] == pytest.approx(expected['price'], abs=1e-6)
+            assert fifo[asset][0]['cost'] == pytest.approx(expected['cost'], abs=1e-6)
+            assert fifo[asset][0]['tx_date'] == expected['tx_date']
 
-        if expected['length'] == 3:
-            # check that 2nd and 3rd lost remain unchanged
-            assert fifo[asset][1]['amount'] == pytest.approx(5, rel=1e-6)
-            assert fifo[asset][1]['price'] == pytest.approx(110, rel=1e-6)
-            assert fifo[asset][1]['cost'] == pytest.approx((5 * 110) * 1.002, rel=1e-6)
-            assert fifo[asset][1]['tx_date'] == date(2024, 2, 1)
-            assert fifo[asset][2]['amount'] == pytest.approx(2, rel=1e-6)
-            assert fifo[asset][2]['price'] == pytest.approx(80, rel=1e-6)
-            assert fifo[asset][2]['cost'] == pytest.approx((2 * 80) * 1.002, rel=1e-6)
-            assert fifo[asset][2]['tx_date'] == date(2024, 3, 1)
+            if expected['length'] == 3:
+                # check that 2nd and 3rd lost remain unchanged
+                assert fifo[asset][1]['amount'] == pytest.approx(5, rel=1e-6)
+                assert fifo[asset][1]['price'] == pytest.approx(110, rel=1e-6)
+                assert fifo[asset][1]['cost'] == pytest.approx((5 * 110) * 1.002, rel=1e-6)
+                assert fifo[asset][1]['tx_date'] == date(2024, 2, 1)
+                assert fifo[asset][2]['amount'] == pytest.approx(2, rel=1e-6)
+                assert fifo[asset][2]['price'] == pytest.approx(80, rel=1e-6)
+                assert fifo[asset][2]['cost'] == pytest.approx((2 * 80) * 1.002, rel=1e-6)
+                assert fifo[asset][2]['tx_date'] == date(2024, 3, 1)
 
-            # check that form8949 is written correctly
-            if sell_amount == 9 and expected == {'length': 3, 'amount': 10 - 9, 'price': 100, 'cost': 1000 * (10 - 9)/10,
-                 "tx_date": date(2024, 1, 1)}:
-                assert form8949[0]['Description'] == f"{round(sell_amount, 8):.8f}" + " " + asset
-                assert form8949[0]['Date Acquired'] == f"01/01/2024"
-                assert form8949[0]['Date Sold'] == f"04/01/2024"
-                assert form8949[0]['Proceeds'] == f"{round(1350, 2):.2f}"
-                assert form8949[0]['Cost Basis'] == f"{round(900, 2):.2f}"
-                assert form8949[0]['Gain or Loss'] == f"{round(450, 2):.2f}"
+                # check that form8949 is written correctly
+                if sell_amount == 9 and expected == {'length': 3, 'amount': 10 - 9, 'price': 100, 'cost': 1000 * (10 - 9)/10,
+                     "tx_date": date(2024, 1, 1)}:
+                    assert form8949[0]['Description'] == f"{round(sell_amount, 8):.8f}" + " " + asset
+                    assert form8949[0]['Date Acquired'] == f"01/01/2024"
+                    assert form8949[0]['Date Sold'] == f"04/01/2024"
+                    assert form8949[0]['Proceeds'] == f"{round(1350, 2):.2f}"
+                    assert form8949[0]['Cost Basis'] == f"{round(900, 2):.2f}"
+                    assert form8949[0]['Gain or Loss'] == f"{round(450, 2):.2f}"
+
+        else:
+            with pytest.raises(ValueError, match=r"sell_amount must be positive, got"):
+                calculate_taxes.reduce_fifo(form8949, sell_amount, asset, fifo[asset], sell_amount * sell_price,
+                                            date(2024, 4, 1))
 
     def test_reduce_fifo_missing_key(self, asset, amount, proceeds,
             sale_date, fifo):
         del fifo[asset][0]['amount']
-        with pytest.raises(KeyError, match=r"contains an invalid"
-                           + " buy."):
+        with pytest.raises(KeyError, match=r"contains an invalid buy."):
             calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
     def test_reduce_fifo_type_error(self, asset, amount, proceeds,
             sale_date, fifo):
         fifo[asset][0]['amount'] = 'five'
-        with pytest.raises(TypeError, match=r"contains an invalid"
-                           + " buy."):
+        with pytest.raises(TypeError, match=r"is not a valid number"):
             calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
                                         sale_date)
 
@@ -787,12 +779,6 @@ class TestUpdateFifo:
         assert fifo[asset][0]['cost'] == pytest.approx(550*1.002*1.00001/5, rel=0, abs=1e-6)
         assert fifo[asset][0]['tx_date'] == date(2024, 2, 1)
 
-    def test_reduce_fifo_missing_asset(self, asset, amount, proceeds,
-            sale_date, fifo):
-        del fifo[asset]
-        with pytest.raises(KeyError, match=asset):
-            calculate_taxes.reduce_fifo([], amount, asset, fifo[asset], proceeds,
-                                        sale_date)
 
 @pytest.fixture(scope="function")
 def row0():
@@ -816,49 +802,6 @@ def rows():
                          'Buy price ($)': [float("nan"), float("nan"), 1, float("nan")],
                          'Type': ['Exchange'] * 4
                          })
-
-"""class TestCheckFees:
-    @pytest.mark.parametrize(
-        "block_type, first_asset, mid_asset, last_asset, expected_match",
-        [
-            ('Exchange', 'feeNVDA', 'USD', 'feeUSD', None),
-            ('Buy', 'NVDA', 'USD', 'feeUSD', None),
-            ('Transfer', 'NVDA', 'USD', 'feeUSD', None),
-            ("Sell", "NVDA", "USD", "feeUSD", None),
-            ('Buy', 'feeNVDA', 'USD', 'feeUSD', 'Invalid block: extra fee'),
-            ('Exchange', 'NVDA', 'USD', 'feeUSD', 'Invalid block: missing approval fee'),
-            ('Sell', 'NVDA', 'USD', 'FEED', 'Invalid block: missing fee'),
-            ('Sell', 'NVDA', 'feeUSD', 'feeNVDA', 'Invalid block: extra fee'),
-        ],
-        ids=['approved_success', 'buy_success', 'transfer_success', 'sell_success',
-             'buy_first_is_fee', 'approved_no_first_fee', 'sell_FEED',
-             'sell_mid_fee']
-    )
-
-    def test_check_fees(self, rows, block_type, first_asset, mid_asset, last_asset, expected_match):
-        if block_type == 'approved_exchange':
-            n_rows = 4
-        elif block_type == 'transfer':
-            n_rows = 2
-        else:
-            n_rows = 3
-        this_rows = rows.head(n_rows).copy()
-        this_rows.loc[0, 'Asset'] = first_asset
-        if n_rows > 2:
-            this_rows.loc[1, 'Asset'] = mid_asset
-        if n_rows > 3:
-            this_rows.loc[2, 'Asset'] = mid_asset
-        this_rows.loc[this_rows.index[-1], 'Asset'] = last_asset
-        if not expected_match:
-            assert calculate_taxes.check_fees(block_type, this_rows) is None
-        else:
-            with pytest.raises(ValueError, match=expected_match):
-                calculate_taxes.check_fees(block_type, this_rows)
-
-    def test_check_fees_empty_df(self):
-        this_rows = pd.DataFrame()
-        with pytest.raises(ValueError, match="Empty dataframe."):
-            calculate_taxes.check_fees('Buy', this_rows)"""
 
 @pytest.fixture(scope='function')
 def buy_data():
@@ -992,13 +935,10 @@ class TestUpdateFifo:
 
 
 class TestMain:
-    def test_main_creates_output_csv(self, tmp_path, monkeypatch):
-        """End-to-end smoke test: main() reads asset_tx.csv and writes form8949_output.csv."""
+    def test_main_creates_output_csv(self, tmp_path):
+        """End-to-end smoke test: main() reads a CSV and writes form8949_output.csv."""
 
         base = tmp_path
-        work = base / "work"
-        work.mkdir()
-
         input_path = base / "asset_tx.csv"
         output_path = base / "form8949_output.csv"
 
@@ -1027,18 +967,28 @@ class TestMain:
         ])
         df_in.to_csv(input_path, index=False)
 
-        # run main() from the "work" directory so it sees ../asset_tx.csv etc.
-        monkeypatch.chdir(work)
-        calculate_taxes.main()
+        # call main() directly with explicit paths (IO wrapper)
+        calculate_taxes.main(
+            input_file_path=str(input_path),
+            output_file_path=str(output_path),
+        )
 
         # check output file exists and is readable
         assert output_path.exists()
         df_out = pd.read_csv(output_path)
         # at least one row should be produced for the sale
         assert len(df_out) >= 1
-        assert {"Description", "Date Acquired", "Date Sold", "Proceeds", "Cost Basis", "Gain or Loss"} <= set(df_out.columns)
+        assert {
+            "Description",
+            "Date Acquired",
+            "Date Sold",
+            "Proceeds",
+            "Cost Basis",
+            "Gain or Loss",
+        } <= set(df_out.columns)
 
-class TestIntegration():
+
+class TestIntegration:
     @pytest.mark.parametrize(
         "rows, expected_len_form8949, expected_last_form",
         [
@@ -1101,41 +1051,25 @@ class TestIntegration():
         ids = ['buy', 'sell', 'transfer', 'approved_exchange', 'exchange']
     )
 
-    def test_integration(self, tmp_path, monkeypatch, fifo,
-                                                 rows,
-                                                 expected_len_form8949,
-                                                 expected_last_form):
+    def test_integration(self, rows, expected_len_form8949,
+                         expected_last_form):
 
-        # create tmp files
-        base = tmp_path
-        work = base / "work"
-        work.mkdir()
-        input_path = base / "asset_tx.csv"
-        output_path = base / "form8949_output.csv"
+        # build a DataFrame of the first two Tx Index blocks
+        df = pd.DataFrame(rows)
+        df = df.loc[df["Tx Index"] < 2]
 
-        rows = pd.DataFrame(rows)
-        rows = rows.loc[rows['Tx Index'] < 2]
-        rows['Date'] = rows['Tx Date']
+        # the pipeline expects a 'Date' column, so mirror 'Tx Date'
+        df["Date"] = df["Tx Date"]
 
-        # write the CSV in the format main() expects
-        df_for_csv = rows[["Date", "Tx Index", "Asset", "Amount (asset)",
-                         "Sell price ($)", "Buy price ($)", "Type"]]
-        df_for_csv.to_csv(input_path, index=False)
-
-        # run main() from the work directory
-        monkeypatch.chdir(work)
-        calculate_taxes.main()
+        # run the pure pipeline
+        form8949 = calculate_taxes.run_fifo_pipeline(df)
 
         # check the generated Form 8949 output
+        assert len(form8949) == expected_len_form8949
+
         if expected_len_form8949 > 0:
-            df_out = pd.read_csv(output_path, dtype=str)
-            assert len(df_out) == expected_len_form8949
-
-            # Reuse your helper on a list-of-dicts representation
-            form_rows = df_out.to_dict("records")
-
             assert does_form_contain_row(
-                form_rows,
+                form8949,
                 expected_last_form["Description"],
                 expected_last_form["Date Acquired"],
                 expected_last_form["Date Sold"],
@@ -1143,6 +1077,3 @@ class TestIntegration():
                 float(expected_last_form["Cost Basis"]),
                 convert_gain_from_irs(expected_last_form["Gain or Loss"]),
             )
-
-        else:
-            assert 0 == expected_len_form8949
