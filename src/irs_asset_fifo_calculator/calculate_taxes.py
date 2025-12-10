@@ -4,37 +4,23 @@ Calculate IRS capital gains taxes using FIFO method.
 Tax calculator that tracks capital gains from multiple purchases and
 sales.  This program uses a CSV file as input.  This file is called
 "asset_tx.csv" in the published example, but any name can be used,
-using this name in the python call. The file has the following header:
-Tx Index, Date, Asset, Amount (asset), Sell price ($), Buy price ($),
-Type, Account number, Entity, Notes, Remaining
+using this name in the python call. Expected input CSV columns
+(at minimum):
 
-Transfer fees are not deducted although if paid with an asset,
-capital gains apply on the conversion of the asset to USD.
+    Tx Index, Date, Asset, Amount (asset),
+    Sell price ($), Buy price ($), Type
 
-Functions:
-    record_sale:
-        Write a sale to the Form 8949 file object.
-    is_finite_number:
-        Return True if x is a finite (non-NaN, non-infinite) real
-        number.
-    reduce_fifo:
-        Update FIFO lots for a sale.
-    parse_amount:
-        Parse amount from input.  Can be string or numeric.
-    is_fee:
-        Check if asset is a fee transaction.
-    parse_buy_and_sell:
-        Extract the buy or sell side from a block of related
-        transactions.
-    parse_row_data:
-        Extract the necessary values from row data.
-    update_fifo:
-        Updates FIFO dict of deques using info from this block of
-        transactions.
+Additional columns such as ``Account number``, ``Entity``, ``Notes`` or
+``Remaining`` may be present but are ignored by this module.
 
-    main:
-        Main function.
+Key steps:
 
+1. Group rows by Tx Index into logical transaction blocks.
+2. For each block, classify buy/sell/fee rows and compute:
+   buy data, sell data, and fee data.
+3. Update per-asset FIFO queues and append realized sales to a
+   Form 8949 list.
+4. Write the Form 8949 list to form8949_output.csv.
 """
 
 from datetime import date
@@ -58,9 +44,10 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
          holding txs.
         asset (str): The asset name.
         amount (float): The amount of the asset units.
-        proceeds (float): The dollar amount of capital gains.
-        cost_basis (float): The dollar cost of this amount of asset
-            taking into account purchase fees.
+        proceeds (float): The gross dollar proceeds from this portion
+         of the sale.
+        cost_basis (float): The dollar cost basis for this portion of
+         the asset, including purchase fees.
         acquisition_date (date): The acquisition date.
         sale_date (date): The sale date.
 
@@ -113,15 +100,12 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
                             f" sale_date: {sale_date} asset: {asset} amount: {amount}")
 
     if amount < 0:
-        print("Amount must be greater than zero.\n",
-              amount, " ", asset, "sale on ", sale_date, "is set as absolute.")
-        amount = abs(amount)
+        raise ValueError(f"Amount must be greater than zero.\n{amount} {asset} "
+                         f"sale on {sale_date} is negative.")
 
     if cost_basis < 0:
-        print("Cost basis must be greater than zero.\n",
-              amount, " ", asset, "purchase on ", acquisition_date,
-              "is set as absolute.")
-        cost_basis = abs(cost_basis)
+        raise ValueError(f"Cost basis must be greater than zero.\n{amount} "
+                         f"{asset} purchase on {acquisition_date} is negative.")
 
     if not isinstance(form8949, list):
         raise TypeError(
@@ -153,17 +137,13 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         })
 
 def is_finite_number(x: object) -> bool:
-    """Return True if x is a finite (non-NaN, non-infinite) real number."""
-    # 1) Is it a numeric type? (int, float, Decimal, Fraction, etc.)
-    if not isinstance(x, numbers.Number):
-        return False
-
-    # Optional: exclude bool, since bool is a subclass of int
-    if isinstance(x, bool):
-        return False
-
-    # 2) Is it finite (not NaN, +inf, -inf)?
-    return isfinite(float(x))
+    """Return True if x is a finite (non-NaN, non-infinite, non-bool)
+    real number."""
+    return (
+            isinstance(x, numbers.Number)
+            and not isinstance(x, bool)
+            and isfinite(float(x))
+    )
 
 class FifoLot(TypedDict):
     amount: float
@@ -219,8 +199,8 @@ def reduce_fifo(
         datetime.date(2024, 2, 1)
     """
 
-    if sell_amount < 0:
-        sell_amount = abs(sell_amount)
+    if sell_amount <= 0:
+        raise ValueError(f"sell_amount must be positive, got {sell_amount}")
 
     amount_tol = 5e-9 # tolerance for remaining asset amount
     proceeds_tol = 5e-3 # tolerance for remaining asset proceeds
@@ -233,10 +213,10 @@ def reduce_fifo(
         # check if all necessary keys are present in fifo row
         required_keys = ['amount', 'price', 'cost', 'tx_date']
         if not all(key in lot for key in required_keys):
-            raise KeyError(f"FIFO contains an invalid purchase. {lot}")
+            raise KeyError(f"FIFO contains an invalid buy. {lot}")
 
         if not isinstance(lot['tx_date'], date):
-            raise TypeError(f"FIFO contains an invalid purchase date: {lot}.")
+            raise TypeError(f"FIFO contains an invalid buy date: {lot}.")
 
         for name, value in (("amount", lot['amount']), ("price", lot['price']),
                             ("cost", lot['cost'])):
@@ -300,7 +280,7 @@ def is_fee(asset: str | None) -> bool:
     In order to be a fee, the asset must start with the letters 'fee',
     and be longer than 3 characters.
     """
-    if asset.startswith("fee") and len(asset) > 3:
+    if asset is not None and asset.startswith("fee") and len(asset) > 3:
         return True
     else:
         return False
@@ -317,7 +297,7 @@ class AssetData:
 
 BlockType = Literal['Buy', 'Sell', 'Exchange', 'Transfer']
 
-def parse_buy_and_sell(is_buy: bool, block_type: str, rows: pd.DataFrame, fee_assets: set[str], fee_rows: List[int]) -> tuple[str | None, float, float, float]:
+def parse_buy_and_sell(is_buy: bool, block_type: BlockType, rows: pd.DataFrame, fee_assets: set[str], fee_rows: List[int]) -> tuple[str | None, float, float, float]:
     """Extract the buy or sell side from a block of related transactions.
 
     For non-transfer blocks, this scans the rows (excluding fee rows) to
@@ -333,7 +313,7 @@ def parse_buy_and_sell(is_buy: bool, block_type: str, rows: pd.DataFrame, fee_as
 
     Args:
         is_buy (bool): are we parsing buy side?
-        block_type (str): Type of block ('Exchange', 'Buy', 'Sell',
+        block_type (BlockType): Type of block ('Exchange', 'Buy', 'Sell',
             or 'Transfer')
         rows (pd.DataFrame): the transactions for this block. Must
             include at least 'Asset', 'Amount (asset)', 'Buy price ($)',
@@ -344,7 +324,15 @@ def parse_buy_and_sell(is_buy: bool, block_type: str, rows: pd.DataFrame, fee_as
             transactions
 
     Returns:
-        (tuple[str, float, float, float]): asset, amount, price, cost or proceeds
+        (tuple[str, float, float, float]): asset, amount, price, cost or
+            proceeds, where
+
+        * amount keeps the sign of the transaction (positive for buys,
+            negative for sells).
+        * price is the unit price in USD (forced to 1.0 for USD).
+        * cost_or_proceeds is:
+            - total cost (positive) for buys, including all relevant fees.
+            - total proceeds (positive or negative with fee adjustments) for sells.
 
     Raises:
         ValueError: If more than one non-fee row matches the requested side.
@@ -367,7 +355,7 @@ def parse_buy_and_sell(is_buy: bool, block_type: str, rows: pd.DataFrame, fee_as
         ...      "Buy price ($)": float("nan"), "Type": "Exchange"},
         ... ])
         >>> fee_rows = [2]
-        >>> fee_assets = ["USD"]
+        >>> fee_assets = set("USD")
         >>> parse_buy_and_sell(True, "Exchange", rows, fee_assets, fee_rows)
         ('NVDA', 10.0, 125.0, 1260.0)
         >>> parse_buy_and_sell(False, "Exchange", rows, fee_assets, fee_rows)
@@ -447,7 +435,7 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         - Deducted from proceeds if the fee asset is the same as the sold asset
         - Recorded as a sale if it is a transfer or if they are different from
             both assets in a buy/sell/exchange.
-    - Here we assume that there con only be a maximum of 1 fee asset
+    - Here we assume that there can only be a maximum of 1 fee asset
         besides the buy and sell assets. Sell and fee amount are
         negative in general.
     - If the fee asset is the same as the buy or sell asset, it is
@@ -486,9 +474,9 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         >>> buy_data
         AssetData(asset='NVDA', amount=10.0, price=125.0, total=1260.0, tx_date=datetime.date(2024, 9, 4))
         >>> sell_data
-        AssetData(asset='USD', amount=-1260.0, price=1.0, total=0.0, tx_date=datetime.date(2024, 9, 4))
+        AssetData(asset='USD', amount=-1260.0, price=1.0, total=1240.0, tx_date=datetime.date(2024, 9, 4))
         >>> fee_data
-        AssetData(asset='USD', amount=-10.0, price=1.0, total=10.0, tx_date=datetime.date(2024, 9, 4))
+        AssetData(asset=None, amount=0.0, price=0.0, total=-0.0, tx_date=datetime.date(2024, 9, 4))
     """
 
     if block_type not in ['Buy', 'Sell', 'Exchange', 'Transfer']:
@@ -544,9 +532,11 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame) -> tuple[AssetData
         else:
             fee_price /= fee_amount
 
+    if fee_amount > 0:
+        raise ValueError(f"Fees cannot be positive: {fee_amount} for {rows}")
+
     fee_proceeds = -fee_amount * fee_price # positive
 
-    # define cost with using USD amounts when available, otherwise use buy data
     # proceeds are 0 for transfers and purchases (USD doesn't give gains)
     if cost < 0:
         raise ValueError(f"Cost cannot be negative: {cost} for {rows}")
@@ -570,8 +560,8 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData,
 
     Notes:
     - In general, buy and sell assets and fee asset should not be the
-    same.  If they were upstream, the fees were added to buy or sell
-    and then set to 0.
+    same.  If they were that way upstream, the fees should have already
+    been added to buy or sell and then set to 0.
     - If previously calculated fees are same asset as buy and larger than
     buy amount, the net buy amount is negative and is thus reduced from
     FIFO instead of appended.
@@ -621,53 +611,75 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData,
         reduce_fifo(form8949, abs(fee_data.amount), fee_data.asset, fifo[fee_data.asset],
                     fee_data.total, fee_data.tx_date)
 
-def main():
-    """Run the FIFO capital-gains pipeline on asset_tx.csv.
+from collections import defaultdict, deque
+from typing import List, Dict, DefaultDict, Deque
 
-    This function produces an IRS Form 8949–style output file.
-    It reads ../asset_tx.csv, keeping only the necessary columns:
-    Tx Index, Tx Date, Asset, Amount (asset), Sell price ($),
-    Buy price ($), Type.  The rows from the CSV are then parsed
-    and the FIFO info is updated, writing all sales to
-    ../form8949_output.csv.
+import pandas as pd
+
+# ... existing imports & functions above (parse_row_data, update_fifo, etc.) ...
+
+
+def run_fifo_pipeline(df: pd.DataFrame) -> List[Dict[str, str]]:
+    """Run the FIFO capital-gains pipeline on a transactions DataFrame.
+
+    The input DataFrame must contain at least the following columns:
+
+    - 'Date'
+    - 'Tx Index'
+    - 'Asset'
+    - 'Amount (asset)'
+    - 'Sell price ($)'
+    - 'Buy price ($)'
+    - 'Type'
+
+    This function is pure with respect to IO: it does not read or write
+    any files. It returns a list of dictionaries representing rows for
+    an IRS Form 8949-style output.
+
+    Args:
+        df: Raw transaction DataFrame with the columns described above.
+
+    Returns:
+        A list of Form 8949 rows (dicts with keys:
+        'Description', 'Date Acquired', 'Date Sold',
+        'Proceeds', 'Cost Basis', 'Gain or Loss').
     """
-    # Load your file from the project root folder
-    input_file_path = "../asset_tx.csv"
-    output_file_path = "../form8949_output.csv"
-    df = pd.read_csv(input_file_path)
+    # Work on a copy so callers keep their original df unchanged
+    df = df.copy()
 
     # create Tx Date column with date format (instead of datetime) and
     # only keep pertinent columns
-    df['Tx Date'] = pd.to_datetime(df['Date']).dt.date
-    df = df[['Tx Index', 'Tx Date', 'Asset', 'Amount (asset)', 'Sell price ($)',
-             'Buy price ($)', 'Type']]
+    df["Tx Date"] = pd.to_datetime(df["Date"]).dt.date
+    df = df[
+        [
+            "Tx Index",
+            "Tx Date",
+            "Asset",
+            "Amount (asset)",
+            "Sell price ($)",
+            "Buy price ($)",
+            "Type",
+        ]
+    ]
 
-    # Prepare FIFO ledger for each token
+    # prepare FIFO ledger for each token
     fifo = defaultdict(deque)
 
-    # Prepare output for Form 8949
+    # prepare output for Form 8949
     form8949 = []
 
-    # Main loop
-    idx = 0
-
-
-    for idx, rows in df.groupby('Tx Index'):
-        block_type = rows.iloc[0]['Type']
+    # main loop (pure pipeline logic)
+    for idx, rows in df.groupby("Tx Index"):
+        block_type = rows.iloc[0]["Type"]
 
         if rows.empty:
             raise ValueError(f"No rows for Tx Index {idx}")
 
-
-        """while idx <= max(df['Tx Index']):
-            # define block
-            rows = df.loc[df['Tx Index'] == idx]
-            block_type = rows.iloc[0]['Type']"""
-
         # check that all transactions within block have same type
-        if not (rows['Type'] == block_type).all():
-            raise ValueError(f"Block does not have same type throughout. "
-                             f"{rows}")
+        if not (rows["Type"] == block_type).all():
+            raise ValueError(
+                "Block does not have same type throughout. " f"{rows}"
+            )
 
         # extract buy, sell, and fee info from rows
         buy_data, sell_data, fee_data = parse_row_data(block_type, rows)
@@ -675,11 +687,40 @@ def main():
         # update FIFO and form8949
         update_fifo(buy_data, sell_data, fee_data, form8949, fifo)
 
-        idx += 1
+    return form8949
 
-    # Create .csv with output for f8949
+
+def main(
+    input_file_path: str = "../asset_tx.csv",
+    output_file_path: str = "../form8949_output.csv",
+) -> None:
+    """Run the FIFO capital-gains pipeline on a CSV file.
+
+    This function produces an IRS Form 8949–style output file.
+
+    It reads input_file_path (by default ../asset_tx.csv),
+    keeping only the necessary columns:
+
+        Tx Index, Date, Asset, Amount (asset),
+        Sell price ($), Buy price ($), Type
+
+    It then parses the rows, updates the FIFO ledger, and writes all
+    sales to output_file_path (by default ../form8949_output.csv).
+
+    Args:
+        input_file_path: Path to the input CSV with raw transactions.
+        output_file_path: Path where the Form 8949-style CSV will be
+            written.
+
+    Returns:
+        None.
+    """
+    # IO-only wrapper around the pure pipeline
+    df = pd.read_csv(input_file_path)
+    form8949 = run_fifo_pipeline(df)
+
     pd.DataFrame(form8949).to_csv(output_file_path, index=False)
-    print("Success! Form 8949 data saved to "+output_file_path)
+    print(f"Success! Form 8949 data saved to {output_file_path}")
 
     # check against original.  Erase this later!!!
     if False:
