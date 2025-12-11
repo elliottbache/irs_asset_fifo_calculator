@@ -26,6 +26,8 @@ Key steps:
 3. Update per-asset FIFO queues and append realized sales to a
    Form 8949 list.
 4. Write the Form 8949 list to "form8949_output.csv".
+
+For a full worked example, see the FIFO overview section of the docs.
 """
 
 from datetime import date

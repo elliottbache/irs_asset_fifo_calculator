@@ -17,3 +17,5 @@ IRS asset FIFO calculator documentation
    python_api
 
 The Python API documentation is generated from the docstrings inside the source code and compiled with Sphinx.
+For details on every function and dataclass, see :doc:`python_api`.
+
