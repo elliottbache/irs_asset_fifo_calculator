@@ -1,0 +1,7 @@
+Tx Index,Date,Asset,Amount (asset),Sell price ($),Buy price ($),Type,Account number,Entity,Notes,Remaining
+0,9/4/2024,USD,-1250,1,,Buy,Kraken,,,
+0,9/4/2024,NVDA,10,,125,Buy,Kraken,,,0.02147766 BTC at 58200
+0,9/4/2024,feeUSD,-10,1,,Buy,Kraken,,,
+1,9/4/2024,NVDA,-4,130,,Buy,Kraken,,,
+1,9/4/2024,USD,520,,1,Buy,Kraken,,,5.59284116 SOL at 134.1
+1,9/4/2024,feeUSD,-1,1,,Buy,Kraken,,,
