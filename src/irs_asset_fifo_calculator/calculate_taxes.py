@@ -34,7 +34,7 @@ from datetime import date
 from math import isfinite, isclose
 from typing import List, Dict, DefaultDict, Deque, TypedDict, Any, Literal
 from collections import defaultdict, deque
-import numbers
+import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
@@ -327,7 +327,7 @@ def parse_amount(value: Any) -> float:
     """Parse amount from input.  Can be string or numeric.
     Extra whitespace is valid, $ or € signs are not."""
 
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float, np.integer, np.floating)):
         return float(value)
 
     if isinstance(value, str):

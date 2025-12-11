@@ -13,9 +13,10 @@ from irs_asset_fifo_calculator.calculate_taxes import (
 
 
 # helpers
-def make_row(asset: str | None, amount: float, tx_idx: int=0,
-             tx_date: date=date(2024, 9, 4),
-             sell: float=float("nan"), buy: float=float("nan"), tx_type: BlockType="Buy"):
+def make_row(asset: str | None, amount: float, tx_idx: int = 0,
+             tx_date: date = date(2024, 9, 4),
+             sell: float = float("nan"), buy: float = float("nan"),
+             tx_type: BlockType = "Buy"):
     return {"Tx Index": tx_idx, "Tx Date": tx_date, "Asset": asset,
             "Amount (asset)": amount,
             "Sell price ($)": sell,
@@ -46,7 +47,8 @@ def compare_parsed_rows(block_type: BlockType, rows: pd.DataFrame, expected:
 DEFAULT_TX_DATE = date(2024, 9, 4)
 
 
-def AD(asset: str | None, amount: float, price: float, total: float, tx_date: date=DEFAULT_TX_DATE) -> AssetData:
+def AD(asset: str | None, amount: float, price: float, total: float,
+       tx_date: date = DEFAULT_TX_DATE) -> AssetData:
     return AssetData(asset=asset, amount=amount, price=price,
                      total=total, tx_date=tx_date)
 
@@ -123,26 +125,27 @@ def reduce_lot1(form8949: List[Dict[str, str]],
         price=orig_tx[0]["price"],
         tx_date=orig_tx[0]['tx_date'])
 
+    expected_cost_basis = (
+            orig_tx[0]["cost"] * abs(data.amount) / orig_tx[0]["amount"]
+    )
+    expected_gain_or_loss = float(data.total) - float(expected_cost_basis)
+
     assert does_form_contain_row(
         form8949,
-        description=f"{round(abs(data.amount), 8):.8f}" + " " + str(data.asset),
+        description=f"{round(abs(data.amount), 8):.8f}"
+                    + " " + str(data.asset),
         date_acquired=orig_tx[0]["tx_date"].strftime("%m/%d/%Y"),
         date_sold=data.tx_date.strftime("%m/%d/%Y"),
         proceeds=data.total,
-        cost_basis=(
-            orig_tx[0]['cost'] * abs(data.amount) / orig_tx[0]['amount']
-        ),
-        gain_or_loss=(
-            float(data.total) - float(orig_tx[0]['cost'] * abs(data.amount)
-                                      / orig_tx[0]['amount'])
-        )
+        cost_basis=expected_cost_basis,
+        gain_or_loss=expected_gain_or_loss
     )
 
 
 def remove_lot1_reduce_lot2(form8949: List[Dict[str, str]],
-                data: AssetData,
-                tx: Deque[FifoLot],
-                orig_tx: Deque[FifoLot]) -> None:
+                            data: AssetData,
+                            tx: Deque[FifoLot],
+                            orig_tx: Deque[FifoLot]) -> None:
 
     if data.asset is None:
         assert False
@@ -161,7 +164,8 @@ def remove_lot1_reduce_lot2(form8949: List[Dict[str, str]],
 
     assert does_form_contain_row(form8949,
            description=(
-               f"{round(abs(orig_tx[0]['amount']), 8):.8f}" + " " + str(data.asset)
+               f"{round(abs(orig_tx[0]['amount']), 8):.8f}"
+               + " " + str(data.asset)
            ),
            date_acquired=orig_tx[0]["tx_date"].strftime("%m/%d/%Y"),
            date_sold=data.tx_date.strftime("%m/%d/%Y"),
