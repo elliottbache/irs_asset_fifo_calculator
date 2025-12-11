@@ -9,6 +9,7 @@ SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
+
 @pytest.fixture
 def readout(capsys) -> str:
     def _():

@@ -991,10 +991,10 @@ def row1():
 def rows():
     return pd.DataFrame({'Tx Date': [date(2024, 9, 4)] * 4,
                          'Asset': ['feeUSD', 'NVDA', 'USD', 'feeUSD'],
-                         'Amount (asset)': [-5, -10, 1250, -5],
-                         'Sell price ($)': [1, 125, float("nan"), 1],
+                         'Amount (asset)': [-5.0, -10.0, 1250.0, -5.0],
+                         'Sell price ($)': [1.0, 125.0, float("nan"), 1.0],
                          'Buy price ($)': [float("nan"), float("nan"),
-                                           1, float("nan")],
+                                           1.0, float("nan")],
                          'Type': ['Exchange'] * 4
                          })
 
