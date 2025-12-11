@@ -8,12 +8,14 @@ import pandas as pd
 import pytest
 
 from irs_asset_fifo_calculator import calculate_taxes
-from irs_asset_fifo_calculator.calculate_taxes import AssetData, FifoLot
+from irs_asset_fifo_calculator.calculate_taxes import (
+    AssetData, FifoLot, BlockType)
 
 
 # helpers
-def make_row(asset, amount, tx_idx=0, tx_date=date(2024, 9, 4),
-             sell='NaN', buy='NaN', tx_type="Buy"):
+def make_row(asset: str | None, amount: float, tx_idx: int=0,
+             tx_date: date=date(2024, 9, 4),
+             sell: float=float("nan"), buy: float=float("nan"), tx_type: BlockType="Buy"):
     return {"Tx Index": tx_idx, "Tx Date": tx_date, "Asset": asset,
             "Amount (asset)": amount,
             "Sell price ($)": sell,
@@ -21,7 +23,7 @@ def make_row(asset, amount, tx_idx=0, tx_date=date(2024, 9, 4),
             "Type": tx_type}
 
 
-def data_is_equalish(data, expected):
+def data_is_equalish(data: AssetData, expected: AssetData):
     assert data.asset == expected.asset
     assert data.amount == pytest.approx(expected.amount, rel=1e-6)
     assert data.price == pytest.approx(expected.price, rel=1e-6)
@@ -29,7 +31,7 @@ def data_is_equalish(data, expected):
     assert data.tx_date == expected.tx_date
 
 
-def compare_parsed_rows(block_type: str, rows: pd.DataFrame, expected:
+def compare_parsed_rows(block_type: BlockType, rows: pd.DataFrame, expected:
                         tuple[AssetData, AssetData, AssetData]) -> None:
     buy_data, sell_data, fee_data = (
         calculate_taxes.parse_row_data(block_type, rows))
@@ -44,7 +46,7 @@ def compare_parsed_rows(block_type: str, rows: pd.DataFrame, expected:
 DEFAULT_TX_DATE = date(2024, 9, 4)
 
 
-def AD(asset, amount, price, total, tx_date=DEFAULT_TX_DATE) -> AssetData:
+def AD(asset: str | None, amount: float, price: float, total: float, tx_date: date=DEFAULT_TX_DATE) -> AssetData:
     return AssetData(asset=asset, amount=amount, price=price,
                      total=total, tx_date=tx_date)
 
@@ -78,8 +80,9 @@ def convert_gain_from_irs(gain_or_loss_str: str) -> float:
         return float(gain_or_loss_str)
 
 
-def does_form_contain_row(form8949, description, date_acquired, date_sold,
-                          proceeds, cost_basis, gain_or_loss) -> bool:
+def does_form_contain_row(form8949: List[Dict[str, str]], description: str,
+                          date_acquired: str, date_sold: str, proceeds: float,
+                          cost_basis: float, gain_or_loss: float) -> bool:
     """Assert a Form 8949 row matches expected values."""
     for row in form8949:
         if row["Description"] != description:
@@ -105,6 +108,9 @@ def reduce_lot1(form8949: List[Dict[str, str]],
                 tx: Deque[FifoLot],
                 orig_tx: Deque[FifoLot]) -> None:
 
+    if data.asset is None:
+        assert False
+
     assert is_fifo_correct(
         tx,
         idx=0,
@@ -119,7 +125,7 @@ def reduce_lot1(form8949: List[Dict[str, str]],
 
     assert does_form_contain_row(
         form8949,
-        description=f"{round(abs(data.amount), 8):.8f}" + " " + data.asset,
+        description=f"{round(abs(data.amount), 8):.8f}" + " " + str(data.asset),
         date_acquired=orig_tx[0]["tx_date"].strftime("%m/%d/%Y"),
         date_sold=data.tx_date.strftime("%m/%d/%Y"),
         proceeds=data.total,
@@ -133,7 +139,13 @@ def reduce_lot1(form8949: List[Dict[str, str]],
     )
 
 
-def remove_lot1_reduce_lot2(form8949, data, tx, orig_tx):
+def remove_lot1_reduce_lot2(form8949: List[Dict[str, str]],
+                data: AssetData,
+                tx: Deque[FifoLot],
+                orig_tx: Deque[FifoLot]) -> None:
+
+    if data.asset is None:
+        assert False
 
     assert is_fifo_correct(
         tx,
@@ -149,7 +161,7 @@ def remove_lot1_reduce_lot2(form8949, data, tx, orig_tx):
 
     assert does_form_contain_row(form8949,
            description=(
-               f"{round(abs(orig_tx[0]['amount']), 8):.8f}" + " " + data.asset
+               f"{round(abs(orig_tx[0]['amount']), 8):.8f}" + " " + str(data.asset)
            ),
            date_acquired=orig_tx[0]["tx_date"].strftime("%m/%d/%Y"),
            date_sold=data.tx_date.strftime("%m/%d/%Y"),
@@ -163,7 +175,7 @@ def remove_lot1_reduce_lot2(form8949, data, tx, orig_tx):
             form8949,
             description=(
                 f"{round(abs(orig_tx[0]['amount'] + data.amount), 8):.8f}"
-                + " " + data.asset),
+                + " " + str(data.asset)),
             date_acquired=orig_tx[1]["tx_date"].strftime("%m/%d/%Y"),
             date_sold=data.tx_date.strftime("%m/%d/%Y"),
             proceeds=(
@@ -186,7 +198,7 @@ def remove_lot1_reduce_lot2(form8949, data, tx, orig_tx):
 
 # unit tests
 @pytest.fixture(scope="function")
-def form8949():
+def form8949() -> List[Dict[str, str]]:
     return [{"Description": "10.00000000 NVDA",
              "Date Acquired": "11/28/1982",
              "Date Sold": "01/01/2024",
@@ -196,32 +208,32 @@ def form8949():
 
 
 @pytest.fixture(scope="function")
-def asset():
+def asset() -> str:
     return 'NVDA'
 
 
 @pytest.fixture(scope="function")
-def amount():
+def amount() -> float:
     return 10.0
 
 
 @pytest.fixture(scope="function")
-def proceeds():
+def proceeds() -> float:
     return 120.0
 
 
 @pytest.fixture(scope="function")
-def cost_basis():
+def cost_basis() -> float:
     return 100.0
 
 
 @pytest.fixture(scope="function")
-def acquisition_date():
+def acquisition_date() -> date:
     return date(2024, 1, 1)
 
 
 @pytest.fixture(scope="function")
-def sale_date():
+def sale_date() -> date:
     return date(2024, 12, 31)
 
 
@@ -350,14 +362,6 @@ class TestParseBuyAndSell:
 
 
 class TestParseRowData:
-
-    """{'Tx Date': [date(2024,9,4)] * 4,
-     'Asset': ['feeUSD', 'NVDA', 'USD', 'feeUSD'],
-     'Amount (asset)': [-5, -10, 1250, -5],
-     'Sell price ($)': [1, 125, float("nan"), 1],
-     'Buy price ($)': [float("nan"), float("nan"), 1, float("nan")],
-     'Type': ['Exchange'] * 4
-     }"""
 
     # check approved_exchange path
     @pytest.mark.parametrize(
@@ -974,21 +978,21 @@ class TestReduceFifo:
 
 
 @pytest.fixture(scope="function")
-def row0():
+def row0() -> pd.Series:
     return pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'USD',
                       'Amount (asset)': -1250.0, 'Sell price ($)': 1.0,
                       'Buy price ($)': 1.0, 'Type': 'Buy'})
 
 
 @pytest.fixture(scope="function")
-def row1():
+def row1() -> pd.Series:
     return pd.Series({'Tx Date': date(2024, 9, 4), 'Asset': 'NVDA',
                       'Amount (asset)': 10.0, 'Sell price ($)': 'NaN',
                       'Buy price ($)': 12.0, 'Type': 'Buy'})
 
 
 @pytest.fixture(scope='function')
-def rows():
+def rows() -> pd.DataFrame:
     return pd.DataFrame({'Tx Date': [date(2024, 9, 4)] * 4,
                          'Asset': ['feeUSD', 'NVDA', 'USD', 'feeUSD'],
                          'Amount (asset)': [-5.0, -10.0, 1250.0, -5.0],
@@ -1000,17 +1004,17 @@ def rows():
 
 
 @pytest.fixture(scope='function')
-def buy_data():
+def buy_data() -> AssetData:
     return AD('TSLA', 25.0, 50.0, 1260.0, date(2024, 5, 1))
 
 
 @pytest.fixture(scope='function')
-def sell_data():
+def sell_data() -> AssetData:
     return AD('NVDA', -10.0, 125.0, 1240.0, date(2024, 5, 1))
 
 
 @pytest.fixture(scope='function')
-def fee_data():
+def fee_data() -> AssetData:
     return AD('USD', -10.0, 1.0, 10.0, date(2024, 5, 1))
 
 

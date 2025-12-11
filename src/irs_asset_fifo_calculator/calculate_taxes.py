@@ -160,7 +160,7 @@ def is_finite_number(x: object) -> bool:
     """Return ``True`` if ``x`` is a finite (non-NaN, non-infinite, non-bool)
     real number."""
     return (
-            isinstance(x, numbers.Number)
+            isinstance(x, (int, float))
             and not isinstance(x, bool)
             and isfinite(float(x))
     )
@@ -327,7 +327,7 @@ def parse_amount(value: Any) -> float:
     """Parse amount from input.  Can be string or numeric.
     Extra whitespace is valid, $ or € signs are not."""
 
-    if isinstance(value, numbers.Number):
+    if isinstance(value, (int, float)):
         return float(value)
 
     if isinstance(value, str):
