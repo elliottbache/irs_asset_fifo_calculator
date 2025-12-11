@@ -8,6 +8,8 @@ import sys
 
 # Add the project root (the folder that contains `src/`) to sys.path
 sys.path.insert(0, os.path.abspath(".."))
+# src/ directory (so `import irs_asset_fifo_calculator` works)
+sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
