@@ -7,20 +7,20 @@ sales.  This program uses a CSV file as input.  This file is called
 using this name in the python call. Expected input CSV columns
 (at minimum):
 
-    Tx Index, Date, Asset, Amount (asset),
-    Sell price ($), Buy price ($), Type
+    ``Tx Index``, ``Date``, ``Asset``, ``Amount (asset)``,
+    ``Sell price ($)``, ``Buy price ($)``, ``Type``
 
 Additional columns such as ``Account number``, ``Entity``, ``Notes`` or
 ``Remaining`` may be present but are ignored by this module.
 
 Key steps:
 
-1. Group rows by Tx Index into logical transaction blocks.
+1. Group rows by ``Tx Index`` into logical transaction blocks.
 2. For each block, classify buy/sell/fee rows and compute:
    buy data, sell data, and fee data.
 3. Update per-asset FIFO queues and append realized sales to a
    Form 8949 list.
-4. Write the Form 8949 list to form8949_output.csv.
+4. Write the Form 8949 list to "form8949_output.csv".
 """
 
 from datetime import date
@@ -142,7 +142,7 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
 
 
 def is_finite_number(x: object) -> bool:
-    """Return True if x is a finite (non-NaN, non-infinite, non-bool)
+    """Return ``True`` if ``x`` is a finite (non-NaN, non-infinite, non-bool)
     real number."""
     return (
             isinstance(x, numbers.Number)
@@ -152,6 +152,14 @@ def is_finite_number(x: object) -> bool:
 
 
 class FifoLot(TypedDict):
+    """Single FIFO lot for an asset.
+
+    Attributes:
+        amount (float): Remaining asset quantity.
+        price (float): Unit price in USD.
+        cost (float): Total cost basis in USD.
+        tx_date (date): Acquisition date of this lot.
+    """
     amount: float
     price: float
     cost: float
@@ -284,9 +292,9 @@ def parse_amount(value: Any) -> float:
 
 
 def is_fee(asset: str | None) -> bool:
-    """Check if asset is a fee transaction.
+    """Check if ``asset`` is a fee transaction.
 
-    In order to be a fee, the asset must start with the letters 'fee',
+    In order to be a fee, the asset must start with the letters "fee",
     and be longer than 3 characters.
     """
     if asset is not None and asset.startswith("fee") and len(asset) > 3:
@@ -297,6 +305,17 @@ def is_fee(asset: str | None) -> bool:
 
 @dataclass
 class AssetData:
+    """Single transaction data row for a particular asset.
+
+    Attributes:
+        asset (str): The asset from the transaction.
+        amount (float): The amount of the asset in this transaction.
+        price (float): Unit price in USD.
+        total (float): Total amount.  This can be cost or proceeds and
+            is typically the ``amount * price
+            +- fee_amount * fee_price``
+        tx_date (date): Date of the transaction.
+    """
     asset: str | None
     amount: float
     price: float
@@ -314,43 +333,55 @@ def parse_buy_and_sell(is_buy: bool, block_type: BlockType, rows: pd.DataFrame,
 
     For non-transfer blocks, this scans the rows (excluding fee rows) to
     find the one representing the buy or sell side based on the sign of
-    'Amount (asset)' (is_buy = True: amount > 0, is_buy = False: amount < 0).
-    It returns that row's asset symbol, signed amount, and unit price.
-    If the resulting asset is in fee_assets, any fee rows are added
-    to the returned amount.
-    - The price for USD is always forced to 1.0.
-    - Returns (None, 0.0, 0.0, 0.0) if
-        - block_type == 'Transfer'
-        - no matching non-fee row is found
+    ``Amount (asset)`` (``is_buy = True``: ``amount > 0``,
+    ``is_buy = False``: ``amount < 0``). It returns that row's asset
+    symbol, signed amount, and unit price. If the resulting asset is
+    in ``fee_assets``, any fee rows are added to the returned amount.
+    The price for USD is always forced to 1.0.
 
     Args:
         is_buy (bool): are we parsing buy side?
-        block_type (BlockType): Type of block ('Exchange', 'Buy', 'Sell',
-            or 'Transfer')
+        block_type (BlockType): Type of block (``"Exchange"``,
+            ``"Buy"``, ``"Sell"``, or ``"Transfer"``)
         rows (pd.DataFrame): the transactions for this block. Must
-            include at least 'Asset', 'Amount (asset)', 'Buy price ($)',
-            and 'Sell price ($)'
+            include at least ``"Asset"``, ``"Amount (asset)"``,
+            ``"Buy price ($)"``, and ``"Sell price ($)"``
         fee_assets (set[str]): assets that have associated fee rows
-            (e.g. 'USD', not 'feeUSD')
+            (e.g. ``"USD"``, not ``"feeUSD"``)
         fee_rows (list[int]): indices within rows that correspond to fee
             transactions
 
     Returns:
-        (tuple[str, float, float, float]): asset, amount, price, cost or
-            proceeds, where
+        tuple[str, float, float, float]:
+            A 4-tuple containing:
 
-        * amount keeps the sign of the transaction (positive for buys,
-            negative for sells).
-        * price is the unit price in USD (forced to 1.0 for USD).
-        * cost_or_proceeds is:
-            - total cost (positive) for buys, including all relevant fees.
-            - total proceeds (positive or negative with fee adjustments)
+            - asset: the buy or sell asset
+            - amount: the buy or sell amount
+            - price: the buy or sell price
+            - cost_or_proceeds: the cost if buy or proceeds if sell
+
+            where
+
+            * amount keeps the sign of the transaction (positive for buys,
+              negative for sells).
+            * price is the unit price in USD (forced to 1.0 for USD).
+            * cost_or_proceeds is:
+
+              - total cost (positive) for buys, including all relevant fees.
+              - total proceeds (positive or negative with fee adjustments)
                 for sells.
 
     Raises:
         ValueError: If more than one non-fee row matches the requested side.
         ValueError: If the fee asset is the same as the buy or sell asset
             but the prices are different.
+
+    Notes:
+        * The price for USD is always forced to ``1.0``.
+        * Returns ``(None, 0.0, 0.0, 0.0)`` when:
+
+          - ``block_type == "Transfer"``, or
+          - no matching non-fee row is found.
 
     Example:
         >>> import pandas as pd
@@ -447,39 +478,47 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame)\
         -> tuple[AssetData, AssetData, AssetData]:
     """Extract the necessary values from row data.
 
-    Notes:
-    - Transfer fees are not deducted although if paid with an asset, the
-        conversion of the asset to USD is taxed.
-    - For transfers, there is no buy data.  The fee data becomes the
-        sell data.
-    - Proceeds from fee assets are:
-        - Added to cost if the fee asset is the same as the bought asset
-        - Deducted from proceeds if the fee asset is the same as the sold asset
-        - Recorded as a sale if it is a transfer or if they are different from
-            both assets in a buy/sell/exchange.
-    - Here we assume that there can only be a maximum of 1 fee asset
-        besides the buy and sell assets. Sell and fee amount are
-        negative in general.
-    - If the fee asset is the same as the buy or sell asset, it is
-        included in these, and the fee amount for that asset
-        is set to 0.  If there are no other fee assets, then the fee
-        asset will be None.
-    - With large enough fees, the buy amount may become negative, in
-        which case it will later be used to update FIFO (reduce and
-        append to form8949) rather than append to FIFO.
-
     Args:
         block_type (BlockType): The type of block to extract from.  Can
-            take the following values: ['Buy', 'Sell',
-            'Exchange', 'Transfer']
+            take the following values: [``"Buy"``, ``"Sell"``,
+            ``"Exchange"``, ``"Transfer"``]
         rows (pd.DataFrame): The row data to extract from. The mandatory
-            columns are: [Tx Index, Tx Date, Asset, Amount (asset),
-            Buy price ($), Sell price ($), Type]
+            columns are: [``"Tx Index"``, ``"Tx Date"``, ``"Asset"``,
+            ``"Amount (asset)"``, ``"Buy price ($)"``,
+            ``"Sell price ($)"``, ``"Type"``]
 
     Returns:
-        AssetData, AssetData, AssetData: buy data, sell data, and fee
-            data.
+        tuple[AssetData, AssetData, AssetData]:
+            A 3-tuple with the following:
 
+            - buy data
+            - sell data
+            - fee data
+
+    Notes:
+        - Transfer fees are not deducted although if paid with an asset,
+          the conversion of the asset to USD is taxed.
+        - For transfers, there is no buy data.  The fee data becomes the
+          sell data.
+        - Proceeds from fee assets are:
+
+          * Added to cost if the fee asset is the same as the bought
+            asset
+          * Deducted from proceeds if the fee asset is the same as the
+            sold asset
+          * Recorded as a sale if it is a transfer or if they are
+            different from both assets in a buy/sell/exchange.
+
+        - Here we assume that there can only be a maximum of 1 fee asset
+          besides the buy and sell assets. Sell and fee amount are
+          negative in general.
+        - If the fee asset is the same as the buy or sell asset, it is
+          included in these, and the fee amount for that asset
+          is set to 0.  If there are no other fee assets, then the fee
+          asset will be None.
+        - With large enough fees, the buy amount may become negative, in
+          which case it will later be used to update FIFO (reduce and
+          append to form8949) rather than append to FIFO.
 
     Example:
         >>> import pandas as pd
@@ -615,7 +654,31 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData,
         None
 
     Example:
-
+        Simple NVDA purchase that appends a new lot to the FIFO ledger:
+        >>> from collections import defaultdict, deque
+        >>> from datetime import date
+        >>> from calculate_taxes import (AssetData, update_fifo)
+        >>> fifo = defaultdict(deque)
+        >>> form8949 = []
+        >>> buy = AssetData(asset="NVDA", amount=10.0, price=100.0,
+        ...                 total=1000.0, tx_date=date(2024, 1, 1))
+        >>> sell = AssetData(asset="USD", amount=-1000.0, price=1.0,
+        ...                  total=0.0, tx_date=date(2024, 1, 1))
+        >>> fee = AssetData(asset=None, amount=0.0, price=0.0, total=0.0,
+        ...                 tx_date=date(2024, 1, 1))
+        >>> update_fifo(buy, sell, fee, form8949, fifo)
+        >>> len(fifo["NVDA"])
+        1
+        >>> fifo["NVDA"][0]["amount"]
+        10.0
+        >>> fifo["NVDA"][0]["price"]
+        100.0
+        >>> fifo["NVDA"][0]["cost"]
+        1000.0
+        >>> fifo["NVDA"][0]["tx_date"]
+        datetime.date(2024, 1, 1)
+        >>> form8949
+        []
     """
 
     if buy_data.asset is not None and buy_data.asset != 'USD':
@@ -651,25 +714,61 @@ def run_fifo_pipeline(df: pd.DataFrame) -> List[Dict[str, str]]:
 
     The input DataFrame must contain at least the following columns:
 
-    - 'Date'
-    - 'Tx Index'
-    - 'Asset'
-    - 'Amount (asset)'
-    - 'Sell price ($)'
-    - 'Buy price ($)'
-    - 'Type'
+    - ``"Date"``
+    - ``"Tx Index"``
+    - ``"Asset"``
+    - ``"Amount (asset)"``
+    - ``"Sell price ($)"``
+    - ``"Buy price ($)"``
+    - ``"Type"``
 
     This function is pure with respect to IO: it does not read or write
     any files. It returns a list of dictionaries representing rows for
     an IRS Form 8949-style output.
 
     Args:
-        df: Raw transaction DataFrame with the columns described above.
+        df (pd.DataFrame): Raw transaction DataFrame with the columns
+            described above.
 
     Returns:
+        List[Dict[str, str]]:
         A list of Form 8949 rows (dicts with keys:
-        'Description', 'Date Acquired', 'Date Sold',
-        'Proceeds', 'Cost Basis', 'Gain or Loss').
+        ``"Description"``, ``"Date Acquired"``, ``"Date Sold"``,
+        ``"Proceeds"``, ``"Cost Basis"``, ``"Gain or Loss"``).
+
+    Example:
+        >>> import pandas as pd
+        >>> from calculate_taxes import run_fifo_pipeline
+        >>> df = pd.DataFrame([
+        ...     # buy block (Tx Index 0)
+        ...     {"Date": "2024-09-04", "Tx Index": 0, "Asset": "USD",
+        ...      "Amount (asset)": -1250.0, "Sell price ($)": 1.0,
+        ...      "Buy price ($)": 1.0, "Type": "Buy"},
+        ...     {"Date": "2024-09-04", "Tx Index": 0, "Asset": "NVDA",
+        ...      "Amount (asset)": 10.0, "Sell price ($)": float('nan'),
+        ...      "Buy price ($)": 125.0, "Type": "Buy"},
+        ...     {"Date": "2024-09-04", "Tx Index": 0, "Asset": "feeUSD",
+        ...      "Amount (asset)": -10.0, "Sell price ($)": 1.0,
+        ...      "Buy price ($)": float('nan'), "Type": "Buy"},
+        ...     # sell block (Tx Index 1)
+        ...     {"Date": "2024-09-05", "Tx Index": 1, "Asset": "NVDA",
+        ...      "Amount (asset)": -4.0, "Sell price ($)": 130.0,
+        ...      "Buy price ($)": float('nan'), "Type": "Sell"},
+        ...     {"Date": "2024-09-05", "Tx Index": 1, "Asset": "USD",
+        ...      "Amount (asset)": 520.0, "Sell price ($)": float('nan'),
+        ...      "Buy price ($)": 1.0, "Type": "Sell"},
+        ...     {"Date": "2024-09-05", "Tx Index": 1, "Asset": "feeUSD",
+        ...      "Amount (asset)": -1.0, "Sell price ($)": 1.0,
+        ...      "Buy price ($)": float('nan'), "Type": "Sell"},
+        ... ])
+        >>> rows = run_fifo_pipeline(df)
+        >>> len(rows) >= 1
+        True
+        >>> sorted(rows[0].keys())  # doctest: +NORMALIZE_WHITESPACE
+        ['Cost Basis', 'Date Acquired', 'Date Sold', 'Description',
+         'Gain or Loss', 'Proceeds']
+        >>> any(r["Description"].endswith("NVDA") for r in rows)
+        True
     """
     # Work on a copy so callers keep their original df unchanged
     df = df.copy()
@@ -725,14 +824,14 @@ def main(
 
     This function produces an IRS Form 8949–style output file.
 
-    It reads input_file_path (by default ../asset_tx.csv),
+    It reads input_file_path (by default "../asset_tx.csv"),
     keeping only the necessary columns:
 
-        Tx Index, Date, Asset, Amount (asset),
-        Sell price ($), Buy price ($), Type
+        ``"Tx Index"``, ``"Date"``, ``"Asset"``, ``"Amount (asset)"``,
+        ``"Sell price ($)"``, ``"Buy price ($)"``, ``"Type"``
 
     It then parses the rows, updates the FIFO ledger, and writes all
-    sales to output_file_path (by default ../form8949_output.csv).
+    sales to output_file_path (by default "../form8949_output.csv").
 
     Args:
         input_file_path: Path to the input CSV with raw transactions.

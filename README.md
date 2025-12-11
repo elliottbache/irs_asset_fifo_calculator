@@ -1,14 +1,5 @@
 <!-- docs:start -->
 
-# To do!!!
-- Add type hinting
-- Create test case
-- Implement CI
-- Check if all columns in CSV are needed and change description accordingly.  Also change where the columns
-are treated inside the code.
-- Add arguments to python call.
-
-
 # IRS asset FIFO calculator
 
 [![Documentation Status](https://readthedocs.org/projects/irs-asset-fifo-calculator/badge/?version=latest)](https://irs-asset-fifo-calculator.readthedocs.io/en/latest/?badge=latest)
@@ -17,7 +8,7 @@ Tax calculator that tracks capital gains from multiple purchases and sales.  Thi
 
 This file is called "asset_tx.csv" in the published example, but any name can be
 be used, using this name in the python call.  The file has the following header:
-Date,Asset,Amount (asset),Sell Price ($),Buy price ($),Account number,Entity,Notes,Remaining
+Date,Asset,Amount (asset),Sell price (\$),Buy price (\$),Account number,Entity,Notes,Remaining
 
 **Table of Contents**
 
