@@ -5,4 +5,4 @@ Python API
    :toctree: _autosummary
    :recursive:
 
-   src.calculate_taxes
+   src.irs_asset_fifo_calculator.calculate_taxes
