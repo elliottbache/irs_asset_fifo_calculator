@@ -202,17 +202,17 @@ def asset():
 
 @pytest.fixture(scope="function")
 def amount():
-    return 10
+    return 10.0
 
 
 @pytest.fixture(scope="function")
 def proceeds():
-    return 120
+    return 120.0
 
 
 @pytest.fixture(scope="function")
 def cost_basis():
-    return 100
+    return 100.0
 
 
 @pytest.fixture(scope="function")

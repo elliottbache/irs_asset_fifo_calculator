@@ -39,6 +39,51 @@ import pandas as pd
 from dataclasses import dataclass
 
 
+def _validate_sale_inputs(form8949: List[Dict[str, str]], asset: str,
+                          amount: float, proceeds: float, cost_basis: float,
+                          acquisition_date: date, sale_date: date) -> None:
+    """Validate the sale inputs."""
+    if not isinstance(acquisition_date, date):
+        raise TypeError(
+            f"Acquisition date must be in date format.\n"
+            f"{str(amount)} {asset} purchase on {acquisition_date} is invalid."
+        )
+    if not isinstance(sale_date, date):
+        raise TypeError(
+            f"Sale date must be in date format.\n"
+            f"{amount} {asset} sale on {sale_date} is invalid."
+        )
+
+    for name, value in (("amount", amount), ("proceeds", proceeds),
+                        ("cost_basis", cost_basis)):
+        if not is_finite_number(value):
+            raise TypeError(f"{name} is not a valid number: {value}."
+                            f" sale_date: {sale_date} asset: {asset} "
+                            f"amount: {amount}")
+
+    if amount < 0:
+        raise ValueError(f"Amount must be greater than zero.\n"
+                         f"{amount} {asset} sale on {sale_date} "
+                         f"is negative.")
+
+    if cost_basis < 0:
+        raise ValueError(f"Cost basis must be greater than zero.\n{amount} "
+                         f"{asset} purchase on {acquisition_date} "
+                         f"is negative.")
+
+    if not isinstance(form8949, list):
+        raise TypeError(
+            "A list object must be passed. Create form8949 list first."
+        )
+
+    if acquisition_date > sale_date:
+        raise ValueError(
+            "Acquisition date must be before sale date.\n"
+            + str(amount) + " " + asset + " sale on " + str(sale_date)
+            + " is invalid."
+        )
+
+
 def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
                 proceeds: float, cost_basis: float, acquisition_date: date,
                 sale_date: date) -> None:
@@ -90,45 +135,8 @@ def record_sale(form8949: List[Dict[str, str]], asset: str, amount: float,
         '10.00'
     """
 
-    if not isinstance(acquisition_date, date):
-        raise TypeError(
-            f"Acquisition date must be in date format.\n"
-            f"{str(amount)} {asset} purchase on {acquisition_date} is invalid."
-        )
-    if not isinstance(sale_date, date):
-        raise TypeError(
-            f"Sale date must be in date format.\n"
-            f"{amount} {asset} sale on {sale_date} is invalid."
-        )
-
-    for name, value in (("amount", amount), ("proceeds", proceeds),
-                        ("cost_basis", cost_basis)):
-        if not is_finite_number(value):
-            raise TypeError(f"{name} is not a valid number: {value}."
-                            f" sale_date: {sale_date} asset: {asset} "
-                            f"amount: {amount}")
-
-    if amount < 0:
-        raise ValueError(f"Amount must be greater than zero.\n"
-                         f"{amount} {asset} sale on {sale_date} "
-                         f"is negative.")
-
-    if cost_basis < 0:
-        raise ValueError(f"Cost basis must be greater than zero.\n{amount} "
-                         f"{asset} purchase on {acquisition_date} "
-                         f"is negative.")
-
-    if not isinstance(form8949, list):
-        raise TypeError(
-            "A list object must be passed. Create form8949 list first."
-        )
-
-    if acquisition_date > sale_date:
-        raise ValueError(
-            "Acquisition date must be before sale date.\n"
-            + str(amount) + " " + asset + " sale on " + str(sale_date)
-            + " is invalid."
-        )
+    _validate_sale_inputs(form8949, asset, amount, proceeds, cost_basis,
+                          acquisition_date, sale_date)
 
     if proceeds >= 0.005 or cost_basis >= 0.005:
 
@@ -171,6 +179,28 @@ class FifoLot(TypedDict):
     price: float
     cost: float
     tx_date: date
+
+
+def _validate_lot_structure(lot: FifoLot) -> None:
+    """Ensure the lot has required keys and valid types/values."""
+    # check if all necessary keys are present in fifo row
+    required_keys = ['amount', 'price', 'cost', 'tx_date']
+    if not all(key in lot for key in required_keys):
+        raise KeyError(f"FIFO contains an invalid buy. {lot}")
+
+    if not isinstance(lot['tx_date'], date):
+        raise TypeError(f"FIFO contains an invalid buy date: {lot}.")
+
+    for name, value in (("amount", lot['amount']), ("price", lot['price']),
+                        ("cost", lot['cost'])):
+        if not is_finite_number(value):
+            raise TypeError(f"{name} is not a valid number: {value}.")
+
+    if lot['amount'] < 0:
+        raise ValueError(f"FIFO amount is negative for sale: {lot}.")
+
+    if lot['cost'] < 0:
+        raise ValueError(f"FIFO cost is negative for sale: {lot}.")
 
 
 def reduce_fifo(
@@ -260,27 +290,11 @@ def reduce_fifo(
         # set the current lot
         lot = fifo_asset[0]
 
-        # check if all necessary keys are present in fifo row
-        required_keys = ['amount', 'price', 'cost', 'tx_date']
-        if not all(key in lot for key in required_keys):
-            raise KeyError(f"FIFO contains an invalid buy. {lot}")
-
-        if not isinstance(lot['tx_date'], date):
-            raise TypeError(f"FIFO contains an invalid buy date: {lot}.")
-
-        for name, value in (("amount", lot['amount']), ("price", lot['price']),
-                            ("cost", lot['cost'])):
-            if not is_finite_number(value):
-                raise TypeError(f"{name} is not a valid number: {value}.")
+        _validate_lot_structure(lot)
 
         if lot['amount'] == 0:
             fifo_asset.popleft()
             continue
-        elif lot['amount'] < 0:
-            raise ValueError(f"FIFO amount is negative for sale: {lot}.")
-
-        if lot['cost'] < 0:
-            raise ValueError(f"FIFO cost is negative for sale: {lot}.")
 
         acquisition_date = lot['tx_date']
         used = min(remaining, lot['amount'])
@@ -359,6 +373,106 @@ class AssetData:
 
 
 BlockType = Literal['Buy', 'Sell', 'Exchange', 'Transfer']
+
+
+def _find_trade_row_index(is_buy: bool, rows: pd.DataFrame,
+                          fee_rows: list[int]) -> int | None:
+    """Locate the index of the non-fee buy/sell row.
+
+    Returns:
+        The integer positional index into ``rows``, or None if no row
+        is found.
+
+    Raises:
+        ValueError: If more than one matching non-fee row is found.
+    """
+    trade_idx = None
+    for idx in range(len(rows)):
+        if idx in fee_rows:
+            continue
+
+        amount = parse_amount(rows.iloc[idx]['Amount (asset)'])
+        if (not is_buy and amount < 0) or (is_buy and amount > 0):
+            if trade_idx is not None:
+                raise ValueError(f"Multiple rows for buy or sell must be"
+                                 f" implemented {rows}.")
+            trade_idx = idx
+
+    return trade_idx
+
+
+def _extract_trade_values(
+        rows: pd.DataFrame, trade_idx: int | None, is_buy: bool
+) -> tuple[str | None, float, float, float]:
+    """Return (asset, amount, price) for the buy/sell side.
+
+    If no trade row is found, returns (None, 0.0, 0.0, 0.0).
+    """
+    if trade_idx is None:
+        return None, 0.0, 0.0, 0.0
+
+    if is_buy:
+        which_price = 'Buy price ($)'
+    else:
+        which_price = 'Sell price ($)'
+
+    row = rows.iloc[trade_idx]
+    asset = row['Asset']
+    amount = parse_amount(row['Amount (asset)'])  # negative
+    price = parse_amount(row[which_price])
+
+    # Dollar is always worth 1 dollar
+    if asset == 'USD':
+        price = 1.0
+
+    total = abs(amount * price)
+
+    return asset, amount, price, total
+
+
+def _adjust_amount_for_same_asset_fees(
+        asset: str | None, amount: float, rows: pd.DataFrame,
+        fee_assets: set[str], fee_rows: list[int]
+) -> float:
+    """Add same-asset fees to the trade amount (if applicable)."""
+    # Add all fees in the buy or sell asset to the buy or sell amount
+    if asset is None or asset not in fee_assets:
+        return amount
+
+    for idx in range(len(fee_rows)):
+        row = rows.iloc[fee_rows[idx]]
+        if row['Asset'] == 'fee' + asset:
+            amount += parse_amount(row['Amount (asset)'])
+
+    return amount
+
+
+def _apply_fee_rows_to_cost_or_proceeds(
+    is_buy: bool,
+    asset: str | None,
+    price: float,
+    total: float,
+    rows: pd.DataFrame,
+    fee_rows: list[int],
+) -> float:
+    """Adjust cost/proceeds by all fee rows, validating same-asset prices."""
+    for idx in range(len(fee_rows)):
+        row = rows.iloc[fee_rows[idx]]
+        fee_amount = abs(parse_amount(row["Amount (asset)"]))
+        fee_price = parse_amount(row["Sell price ($)"])
+
+        # make sure fee price is same as buy or sell price if the same asset
+        if asset is not None and row['Asset'] == 'fee' + asset:
+            if not isclose(price, fee_price, rel_tol=1e-6):
+                raise ValueError(f"Fee price does not match buy or sell price"
+                                 f" for \n{row} \n\nin \n{rows}.")
+
+        if is_buy:
+            total += fee_amount * fee_price
+        else:
+            total -= fee_amount * fee_price
+
+    return total
 
 
 def parse_buy_and_sell(is_buy: bool, block_type: BlockType, rows: pd.DataFrame,
@@ -444,69 +558,90 @@ def parse_buy_and_sell(is_buy: bool, block_type: BlockType, rows: pd.DataFrame,
     if block_type == 'Transfer':
         return None, 0.0, 0.0, 0.0
 
-    # identify row with buy or sell data
-    buy_or_sell_idx = None
-    for idx in range(len(rows)):
-        amount = parse_amount(rows.iloc[idx]['Amount (asset)'])
-        if idx not in fee_rows and \
-                ((not is_buy and amount < 0) or (is_buy and amount > 0)):
-            if buy_or_sell_idx is not None:
-                raise ValueError(f"Multiple rows for buy or sell must be"
-                                 f" implemented {rows}.")
-            buy_or_sell_idx = idx
+    trade_idx = _find_trade_row_index(is_buy, rows, fee_rows)
 
-    # define buy or sell data
-    if is_buy:
-        which_price = 'Buy price ($)'
-    else:
-        which_price = 'Sell price ($)'
+    trade_asset, trade_amount, trade_price, cost_or_proceeds = \
+        _extract_trade_values(rows, trade_idx, is_buy)
 
-    if buy_or_sell_idx is None:
-        buy_or_sell_asset = None
-        buy_or_sell_amount = 0.0
-        buy_or_sell_price = 0.0
-    else:
-        row = rows.iloc[buy_or_sell_idx]
-        buy_or_sell_asset = row['Asset']
-        buy_or_sell_amount = parse_amount(row['Amount (asset)'])  # negative
-        buy_or_sell_price = parse_amount(row[which_price])
+    trade_amount = _adjust_amount_for_same_asset_fees(
+        trade_asset, trade_amount, rows, fee_assets, fee_rows
+    )
 
-    # Dollar is always worth 1 dollar
-    if buy_or_sell_asset == 'USD':
-        buy_or_sell_price = 1.0
+    cost_or_proceeds = _apply_fee_rows_to_cost_or_proceeds(
+        is_buy, trade_asset, trade_price, cost_or_proceeds, rows, fee_rows
+    )
 
-    # calculate cost or proceeds before adding fees
-    cost_or_proceeds = abs(buy_or_sell_amount * buy_or_sell_price)
+    return (trade_asset, trade_amount, trade_price, cost_or_proceeds)
 
-    # Add all fees in the buy or sell asset to the buy or sell amount
-    if buy_or_sell_asset in fee_assets:
-        for idx in range(len(fee_rows)):
-            row = rows.iloc[fee_rows[idx]]
-            if row['Asset'] == 'fee' + buy_or_sell_asset:
-                buy_or_sell_amount += parse_amount(row['Amount (asset)'])
 
-    # add all fees to cost and proceeds (not only fee assets that are
-    # same as buy and sell)
-    for idx in range(len(fee_rows)):
-        row = rows.iloc[fee_rows[idx]]
+def _prune_fee_rows_for_trade_assets(
+    rows: pd.DataFrame,
+    fee_rows: list[int],
+    fee_assets: set[str],
+    buy_asset: str | None,
+    sell_asset: str | None,
+) -> None:
+    """Remove fee rows/assets that belong to the buy or sell asset.
 
-        # make sure fee price is same as buy or sell price if the same asset
-        if (buy_or_sell_asset is not None and row['Asset'] == 'fee'
-                + buy_or_sell_asset):
-            if not isclose(buy_or_sell_price,
-                           parse_amount(row['Sell price ($)']), rel_tol=1e-6):
-                raise ValueError(f"Fee price does not match buy or sell price"
-                                 f" for \n{row} \n\nin \n{rows}.")
-
-        if is_buy:
-            cost_or_proceeds += (abs(parse_amount(row['Amount (asset)']))
-                                 * parse_amount(row['Sell price ($)']))
+    After this:
+    - `fee_assets` contains only assets different from buy/sell.
+    - `fee_rows` contains only rows whose underlying asset is not
+      the buy or sell asset.
+    """
+    if buy_asset in fee_assets:
+        fee_assets.remove(buy_asset)
+    if sell_asset in fee_assets:
+        fee_assets.remove(sell_asset)
+    idx = 0
+    while idx < len(fee_rows):
+        if (rows.iloc[fee_rows[idx]]['Asset'][len('fee'):] in
+                [buy_asset, sell_asset]):
+            del fee_rows[idx]
         else:
-            cost_or_proceeds -= (abs(parse_amount(row['Amount (asset)']))
-                                 * parse_amount(row['Sell price ($)']))
+            idx += 1
 
-    return (buy_or_sell_asset, buy_or_sell_amount,
-            buy_or_sell_price, cost_or_proceeds)
+
+def _aggregate_fee_asset(
+    rows: pd.DataFrame,
+    fee_rows: list[int],
+    fee_assets: set[str],
+) -> tuple[str | None, float, float]:
+    """Aggregate remaining fee rows into (asset, amount, avg_price).
+
+    Returns:
+        (fee_asset, fee_amount, fee_price)
+
+    Raises:
+        ValueError: If more than one **different** fee asset remains.
+        ValueError: If fees are positive.
+
+    """
+    # check that there is max of 1 fee asset different from
+    # buy and sell assets
+    if len(fee_assets) > 1:
+        raise ValueError(f"Too many fee assets: {fee_assets} in {rows}.")
+
+    fee_asset = None
+    fee_amount, fee_price = 0.0, 0.0
+    if len(fee_assets) == 1:
+        fee_asset = next(iter(fee_assets))
+        # fee_price is an average even though all fee_price for the
+        # same tx should be the same
+        for idx in range(len(fee_rows)):
+            this_amount = parse_amount(rows.iloc[fee_rows[idx]]
+                                       ['Amount (asset)'])
+            fee_amount += this_amount
+            fee_price += this_amount * parse_amount(
+                    rows.iloc[fee_rows[idx]]['Sell price ($)'])
+        if fee_amount == 0:
+            fee_price = 0.0
+        else:
+            fee_price /= fee_amount
+
+    if fee_amount > 0:
+        raise ValueError(f"Fees cannot be positive: {fee_amount} for {rows}")
+
+    return fee_asset, fee_amount, fee_price
 
 
 def parse_row_data(block_type: BlockType, rows: pd.DataFrame)\
@@ -604,44 +739,11 @@ def parse_row_data(block_type: BlockType, rows: pd.DataFrame)\
     if buy_asset is not None and buy_asset == sell_asset:
         raise ValueError("Buy and sell asset cannot be the same.")
 
-    # remove buy and sell assets from fee assets
-    if buy_asset in fee_assets:
-        fee_assets.remove(buy_asset)
-    if sell_asset in fee_assets:
-        fee_assets.remove(sell_asset)
-    idx = 0
-    while idx < len(fee_rows):
-        if (rows.iloc[fee_rows[idx]]['Asset'][len('fee'):] in
-                [buy_asset, sell_asset]):
-            del fee_rows[idx]
-        else:
-            idx += 1
+    _prune_fee_rows_for_trade_assets(rows, fee_rows, fee_assets, buy_asset,
+                                     sell_asset)
 
-    # check that there is max of 1 fee asset different from
-    # buy and sell assets
-    if len(fee_assets) > 1:
-        raise ValueError(f"Too many fee assets: {fee_assets} in {rows}.")
-
-    fee_asset = None
-    fee_amount, fee_price = 0.0, 0.0
-    if len(fee_assets) == 1:
-        fee_asset = next(iter(fee_assets))
-        # fee_price is an average even though all fee_price for the
-        # same tx should be the same
-        for idx in range(len(fee_rows)):
-            this_amount = parse_amount(rows.iloc[fee_rows[idx]]
-                                       ['Amount (asset)'])
-            fee_amount += this_amount
-            fee_price += this_amount * parse_amount(
-                    rows.iloc[fee_rows[idx]]['Sell price ($)'])
-        if fee_amount == 0:
-            fee_price = 0.0
-        else:
-            fee_price /= fee_amount
-
-    if fee_amount > 0:
-        raise ValueError(f"Fees cannot be positive: {fee_amount} for {rows}")
-
+    fee_asset, fee_amount, fee_price = _aggregate_fee_asset(rows, fee_rows,
+                                                            fee_assets)
     fee_proceeds = -fee_amount * fee_price  # positive
 
     # proceeds are 0 for transfers and purchases (USD doesn't give gains)
