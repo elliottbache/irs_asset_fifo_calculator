@@ -8,15 +8,16 @@ Tax calculator that tracks capital gains from multiple purchases and sales.  Thi
 
 This file is called "asset_tx.csv" in the published example, but any name can be
 be used, using this name in the python call.  The file has the following header:
-Date,Asset,Amount (asset),Sell price (\$),Buy price (\$),Account number,Entity,Notes,Remaining
+"Date", "Asset", "Amount (asset)", "Sell price (\$)", "Buy price (\$)", "Account number", "Entity", "Notes", "Remaining"
 
 **Table of Contents**
 
 - [What this project does](#what-this-project-does)
 - [FIFO in one paragraph](#fifo-in-one-paragraph)
 - [Installation](#installation)
-- [Execution / Usage](#execution--usage)
+- [Quick start](#quick-start)
 - [Technologies](#technologies)
+- [Development](#development)
 - [Contributing](#contributing)
 - [Contributors](#contributors)
 - [Author](#author)
@@ -64,19 +65,15 @@ see [`docs/fifo_overview.md`](docs/fifo_overview.md).
 ## Installation
 No installation is required.  
 
-## Execution / Usage
-This program was developed with Python 3.11.14.  To run this tax calculator, only the python file and the input CSV file
-containing all of the transactions are needed.
-```sh
-$ python irs_asset_fifo_calculator/calculate_taxes.py
-```
+## Quick start
 
-In order to create Sphinx documentation from the docstrings in PyCharm, a new run task must be created: 
-Run > Edit Configurations... > + (top-left) > Sphinx task.  In the window that opens, name the Sphinx task in the
-"Name" field, select "html" under the "Command:" dropdown, select the docs folder in the root folder in the "Input:"
-field, and select the docs/_build folder in the "Output:" field.  If the docs or docs/_build folder do not already
-exist, they will perhaps need to be created.  The Sphinx documentation can now be created by going to Run > Run... and
-selecting the Sphinx task name.
+1. Put your transactions in `asset_tx.csv` with the header:
+   `Date, Tx Index, Asset, Amount (asset), Sell price ($), Buy price ($), Type, ...`
+2. Run from CLI:
+```bash
+   cd src
+   python -m irs_asset_fifo_calculator.calculate_taxes
+```
 
 ## Technologies
 
@@ -85,6 +82,15 @@ IRS asset FIFO calculator uses the following technologies and tools:
 - [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
 - [![Sphinx](https://img.shields.io/badge/Sphinx-3B4D92?style=for-the-badge&logo=sphinx&logoColor=white)](https://www.sphinx-doc.org/en/master/)
 
+## Development
+### Building the docs
+
+In order to create Sphinx documentation from the docstrings in PyCharm, a new run task must be created: 
+Run > Edit Configurations... > + (top-left) > Sphinx task.  In the window that opens, name the Sphinx task in the
+"Name" field, select "html" under the "Command:" dropdown, select the docs folder in the root folder in the "Input:"
+field, and select the docs/_build folder in the "Output:" field.  If the docs or docs/_build folder do not already
+exist, they will perhaps need to be created.  The Sphinx documentation can now be created by going to Run > Run... and
+selecting the Sphinx task name.
 
 ## Contributing
 
@@ -112,8 +118,8 @@ these fellows have put into the project's growth and improvement.
 
 ## Change log
 
-- 0.0.1
-    - First working version
+- 0.1.0
+    - First public FIFO release
 
 ## License
 
