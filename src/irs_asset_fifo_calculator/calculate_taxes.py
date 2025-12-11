@@ -1,8 +1,13 @@
 """
 Calculate IRS capital gains taxes using FIFO method.
 
-Tax calculator that tracks capital gains from multiple purchases and
-sales.  This program uses a CSV file as input.  This file is called
+This module implements IRS-style FIFO cost-basis calculations for
+stocks and other assets. Each purchase creates a "lot" stored in a
+per-asset FIFO queue.  Each sale consumes lots from oldest to newest,
+allocating cost basis and proceeds proportionally and emitting Form 8949
+rows.
+
+This program uses a CSV file as input.  This file is called
 "asset_tx.csv" in the published example, but any name can be used,
 using this name in the python call. Expected input CSV columns
 (at minimum):
@@ -173,8 +178,36 @@ def reduce_fifo(
         sale_date: date) -> None:
     """Update FIFO lots for a sale.
 
-    Takes a sale and reduces the FIFO lots for that asset by the sale
-    amount, recording one or more rows in form8949.
+    This is where the FIFO cost-basis math happens. Given a sale of
+    ``sell_amount`` units of ``asset``, the function walks the existing
+    lots in ``fifo_asset`` from oldest to newest, consuming quantities
+    until the sale is fully matched. For each lot (or partial lot) that
+    is used, it:
+
+    1. Computes the fraction of the lot that is being sold.
+    2. Allocates the same fraction of the lot's cost to this sale.
+    3. Allocates a proportional share of the sale's total proceeds
+       based on how many units from the lot are used.
+    4. Records a Form 8949 row via :func:`record_sale`.
+    5. Updates or removes the lot from ``fifo_asset`` to reflect what
+       remains after the sale.
+
+    In other words, the earliest purchases (oldest lots) are always
+    matched first, which is exactly the FIFO (First In, First Out)
+    method required for these cost-basis calculations.
+
+    Example:
+        Suppose you bought 10 NVDA at $10 (cost $100) and later
+        5 NVDA at $11 (cost $55), then sell 12 NVDA for total proceeds
+        of $144. The FIFO matching is:
+
+        * First 10 units come from the $10 lot
+        * Remaining 2 units come from the $11 lot
+
+        This function will:
+        * Create one Form 8949 row for the 10-unit slice of the first lot
+        * Create another row for the 2-unit slice of the second lot
+        * Leave 3 units in the second lot in ``fifo_asset``
 
     Args:
         form8949 (List[Dict[str, str]]): Form 8949 list of dicts
@@ -631,14 +664,6 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData,
                 fifo: DefaultDict[str, Deque[FifoLot]]) -> None:
     """Updates FIFO dict of deques using info from this block of transactions.
 
-    Notes:
-    - In general, buy and sell assets and fee asset should not be the
-    same.  If they were that way upstream, the fees should have already
-    been added to buy or sell and then set to 0.
-    - If previously calculated fees are same asset as buy and larger than
-    buy amount, the net buy amount is negative and is thus reduced from
-    FIFO instead of appended.
-
     Args:
         buy_data (AssetData): buy info for this block of transactions
         sell_data (AssetData): sell info for this block of transactions
@@ -649,9 +674,16 @@ def update_fifo(buy_data: AssetData, sell_data: AssetData, fee_data: AssetData,
             purchases of each token defined by their amount, price,
             cost, and date
 
-
     Returns:
         None
+
+    Notes:
+    - In general, buy and sell assets and fee asset should not be the
+    same.  If they were that way upstream, the fees should have already
+    been added to buy or sell and then set to 0.
+    - If previously calculated fees are same asset as buy and larger than
+    buy amount, the net buy amount is negative and is thus reduced from
+    FIFO instead of appended.
 
     Example:
         Simple NVDA purchase that appends a new lot to the FIFO ledger:
