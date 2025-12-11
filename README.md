@@ -28,7 +28,7 @@ No installation is required.
 This program was developed with Python 3.11.14.  To run this tax calculator, only the python file and the input CSV file
 containing all of the transactions are needed.
 ```sh
-$ python calculate_taxes.py asset_tx.csv
+$ python irs_asset_fifo_calculator/calculate_taxes.py
 ```
 
 In order to create Sphinx documentation from the docstrings in PyCharm, a new run task must be created: 
