@@ -38,5 +38,8 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Check type hinting with mypy
       run: mypy src/irs_asset_fifo_calculator
-    - name: Test with pytest
-      run: pytest
+    - name: Run tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        pytest -q --cov --cov-branch --cov-report=xml --cov-fail-under=85
