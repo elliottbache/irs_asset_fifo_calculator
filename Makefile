@@ -17,8 +17,8 @@ help:
 	@echo "  make venv            Create virtualenv (.venv)"
 	@echo "  make install-dev     Install project + dev deps"
 	@echo "  make docs            Build Sphinx HTML docs"
-	@echo "  make lint            Run ruff (lint), black --check, isort --check, codespell"
-	@echo "  make format          Run ruff --fix, black, isort"
+	@echo "  make lint            Run ruff (lint), black --check, codespell"
+	@echo "  make format          Run ruff --fix, black"
 	@echo "  make typecheck       Run mypy"
 	@echo "  make test            Run pytest"
 	@echo "  make run             Run tax calculator"
@@ -36,8 +36,7 @@ deps:
 
 .PHONY: ci
 ci: install-dev
-	$(ACTIVATE); ruff check .
-	$(ACTIVATE); isort --check-only --profile black src
+	$(ACTIVATE); ruff check -I -.
 	$(ACTIVATE); black --check --diff .
 	$(ACTIVATE); codespell
 	$(ACTIVATE); mypy
@@ -62,15 +61,13 @@ docs: install-dev
 
 .PHONY: lint
 lint: install-dev
-	$(ACTIVATE); ruff check .
-	$(ACTIVATE); isort --check-only --profile black src
+	$(ACTIVATE); ruff check --select I .
 	$(ACTIVATE); black --check --diff .
 	$(ACTIVATE); codespell
 
 .PHONY: format
 format: install-dev
-	$(ACTIVATE); ruff check . --fix
-	$(ACTIVATE); isort --profile black .
+	$(ACTIVATE); ruff check --fix --select I .
 	$(ACTIVATE); black .
 
 .PHONY: typecheck
