@@ -822,7 +822,7 @@ def update_fifo(
     form8949: list[dict[str, str]],
     fifo: defaultdict[str, deque[FifoLot]],
 ) -> None:
-    """Updates FIFO dict of deques using info from this block of transactions.
+    """Updates FIFO dict of ``deque``  using info from this block of transactions.
 
     Args:
         buy_data (AssetData): buy info for this block of transactions
