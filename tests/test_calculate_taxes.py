@@ -2,6 +2,7 @@ import copy
 from collections import defaultdict, deque
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -277,6 +278,69 @@ class TestIsFee:
 
     def test_is_fee_none(self):
         assert calculate_taxes.is_fee(None) is False
+
+
+class TestParseAmount:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            # plain Python numbers
+            (10, 10.0),
+            (10.5, 10.5),
+            (-1250, -1250.0),
+            (-12.34, -12.34),
+            # numpy numbers
+            (np.int64(7), 7.0),
+            (np.float64(3.14), 3.14),
+            (np.int32(-42), -42.0),
+            # strings with optional commas and whitespace
+            ("123", 123.0),
+            ("  123  ", 123.0),
+            ("  -1,250  ", -1250.0),
+        ],
+        ids=[
+            "int",
+            "float",
+            "neg_int",
+            "neg_float",
+            "np_int64",
+            "np_float64",
+            "np_int32_neg",
+            "str_simple",
+            "str_spaces",
+            "str_commas_negative",
+        ],
+    )
+    def test_valid_values(self, value, expected) -> None:
+        assert calculate_taxes.parse_amount(value) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "   ",
+            "abc",
+            "$10",
+            "10€",
+        ],
+        ids=["empty", "spaces_only", "letters", "dollar_sign", "euro_sign"],
+    )
+    def test_invalid_strings_raise_value_error(self, value) -> None:
+        with pytest.raises(ValueError, match=r"Invalid amount"):
+            calculate_taxes.parse_amount(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            [1, 2, 3],
+            {"amount": 10},
+            object(),
+        ],
+        ids=["list", "dict", "object"],
+    )
+    def test_invalid_types_raise_type_error(self, value) -> None:
+        with pytest.raises(TypeError, match=r"Invalid amount"):
+            calculate_taxes.parse_amount(value)
 
 
 class TestParseBuyAndSell:
