@@ -45,7 +45,7 @@ DEFAULT_INPUT_FILE = "asset_tx.csv"
 DEFAULT_OUTPUT_FILE = "form8949.csv"
 
 
-def parse_args(argv: Sequence[str]) -> tuple[str, str]:
+def parse_args(argv: Sequence[str] | None = None) -> tuple[str, str]:
     """Parse args from command line."""
     parser = argparse.ArgumentParser(
         prog="irs-fifo-taxes",
