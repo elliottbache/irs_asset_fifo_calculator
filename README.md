@@ -3,8 +3,8 @@
 # IRS asset FIFO calculator
 
 [![Documentation Status](https://readthedocs.org/projects/irs-asset-fifo-calculator/badge/?version=latest)](https://irs-asset-fifo-calculator.readthedocs.io/en/latest/?badge=latest)
-[![CI](https://github.com/elliottbache/irs_asset_fifo_calculator/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/elliottbache/irs_asset_fifo_calculator/actions/workflows/ci.yaml)
-[![codecov](https://codecov.io/github/elliottbache/irs_asset_fifo_calculator/branch/master/graph/badge.svg?token=GGLIJMZ736)](https://codecov.io/github/elliottbache/irs_asset_fifo_calculator) 
+[![CI](https://github.com/elliottbache/irs_asset_fifo_calculator/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/elliottbache/irs_asset_fifo_calculator/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/github/elliottbache/irs_asset_fifo_calculator/graph/badge.svg?token=PFPO48XQ72)](https://codecov.io/github/elliottbache/irs_asset_fifo_calculator) 
 [![Release](https://img.shields.io/github/v/release/elliottbache/irs_asset_fifo_calculator)](https://github.com/elliottbache/irs_asset_fifo_calculator/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green?style=plastic)](https://github.com/elliottbache/irs_asset_fifo_calculator/blob/main/LICENSE)
 
