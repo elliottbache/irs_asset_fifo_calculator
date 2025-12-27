@@ -55,6 +55,10 @@ This deduction also affects the proceeds of the sold asset, decreasing it.
 it is treated as a sale, and the FIFO ledger is updated accordingly, reducing
 the oldest lot for that asset.
 
+Fees for each transaction can be deducted in the buy asset, the sell asset, and in 
+one more asset.  Two fee assets that are neither the buy nor sell asset will result 
+in an error.
+
 ### Transfer
 For transfers, the fees are not deducted, but are taken into account when
 updated the FIFO ledger, where they are subtracted from the oldest lot
