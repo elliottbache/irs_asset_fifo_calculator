@@ -75,8 +75,20 @@ No installation is required.
    `Date, Tx Index, Asset, Amount (asset), Sell price ($), Buy price ($), Type, ...`
 2. Run from CLI:
 ```bash
-   cd src
-   python -m irs_asset_fifo_calculator.calculate_taxes
+cd src
+python irs-fifo-taxes
+```
+
+### Tutorial case
+A tutorial case is available to ensure that the Form 8949 is being created correctly.  To create the 
+corresponding form, the following should be run from the repo root:
+```bash
+python irs-fifo-taxes --input-file=examples/asset_tx.csv --output-file=form8949_example.csv
+bash scripts/compare-tutorial-results.sh
+```
+If there are no executable permissions on the script, they can be set with
+```bash
+chmod u+x scripts/compare-tutorial-results.sh
 ```
 
 ## Technologies

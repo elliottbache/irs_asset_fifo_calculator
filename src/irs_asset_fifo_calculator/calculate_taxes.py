@@ -25,7 +25,7 @@ Key steps:
    buy data, sell data, and fee data.
 3. Update per-asset FIFO queues and append realized sales to a
    Form 8949 list.
-4. Write the Form 8949 list to "form8949_output.csv".
+4. Write the Form 8949 list to "form8949.csv".
 
 For a full worked example, see the FIFO overview section of the docs.
 """
@@ -1076,7 +1076,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         ``"Sell price ($)"``, ``"Buy price ($)"``, ``"Type"``
 
     It then parses the rows, updates the FIFO ledger, and writes all
-    sales to output_file_path (by default "form8949_output.csv").
+    sales to output_file_path (by default "form8949.csv").
 
     Args:
         input_file_path: Path to the input CSV with raw transactions.
@@ -1095,21 +1095,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     pd.DataFrame(form8949).to_csv(output_file, index=False)
     print(f"Success! Form 8949 data saved to {output_file}")
-
-    # check against original.  Erase this later!!!
-    if False:
-        df_output = pd.DataFrame(form8949)
-        df_original = pd.read_csv("form8949_output_original.csv")
-        pd.set_option("display.max_columns", None)  # Show all columns
-        df_original["Proceeds difference"] = abs(
-            df_original["Proceeds"].astype(float) - df_output["Proceeds"].astype(float)
-        )
-        df_original["Cost Basis difference"] = abs(
-            df_original["Cost Basis"].astype(float)
-            - df_output["Cost Basis"].astype(float)
-        )
-        print(df_original[df_original["Proceeds difference"] > 0.05])
-        print(df_original[df_original["Cost Basis difference"] > 0.05])
 
 
 if __name__ == "__main__":
