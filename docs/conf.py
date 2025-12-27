@@ -41,10 +41,16 @@ autosummary_generate = True
 # Ensure module pages include their members (functions, classes, etc.)
 autodoc_default_options = {
     "members": True,
-    "undoc-members": True,  # optional
-    "show-inheritance": True,  # harmless if you have no classes
-    # "imported-members": True,  # enable if you re-export from other modules
+    # "undoc-members": True,  # avoid error in dataclass where members are documented twice
+    "show-inheritance": True,
 }
+
+# make header anchors be automatically created from headers
+myst_heading_anchors = 3
+
+# This tells MyST: if it looks like a path, just leave it alone
+# helps resolve warnings where myst can't find reference but link still works
+myst_all_links_external = True
 
 # If you use Google/NumPy docstrings
 napoleon_google_docstring = True
