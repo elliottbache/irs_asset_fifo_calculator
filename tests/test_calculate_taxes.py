@@ -1727,11 +1727,11 @@ class TestUpdateFifo:
 class TestMain:
     def test_main_creates_output_csv(self, tmp_path):
         """End-to-end smoke test: main() reads a CSV and writes
-        form8949_output.csv."""
+        form8949.csv."""
 
         base = tmp_path
         input_path = base / "asset_tx.csv"
-        output_path = base / "form8949_output.csv"
+        output_path = base / "form8949.csv"
 
         # minimal two-block example
         df_in = pd.DataFrame(
@@ -1797,10 +1797,7 @@ class TestMain:
         df_in.to_csv(input_path, index=False)
 
         # call main() directly with explicit paths (IO wrapper)
-        calculate_taxes.main(
-            input_file_path=str(input_path),
-            output_file_path=str(output_path),
-        )
+        calculate_taxes.main([f"--input-file={input_path}", f"--output-file={output_path}"])
 
         # check output file exists and is readable
         assert output_path.exists()

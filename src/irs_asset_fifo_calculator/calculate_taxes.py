@@ -30,7 +30,9 @@ Key steps:
 For a full worked example, see the FIFO overview section of the docs.
 """
 
+import argparse
 from collections import defaultdict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from math import isclose, isfinite
@@ -38,6 +40,32 @@ from typing import Any, Literal, TypedDict
 
 import numpy as np
 import pandas as pd
+
+DEFAULT_INPUT_FILE = "asset_tx.csv"
+DEFAULT_OUTPUT_FILE = "form8949.csv"
+
+
+def parse_args(argv: Sequence[str]) -> tuple[str, str]:
+    """Parse args from command line."""
+    parser = argparse.ArgumentParser(
+        prog="irs-fifo-taxes",
+        description="FIFO-based IRS Form 8949 capital gains calculator for assets.",
+    )
+
+    parser.add_argument(
+        "--input-file",
+        default=DEFAULT_INPUT_FILE,
+        help=f"list of transactions .csv (default: {DEFAULT_INPUT_FILE})",
+    )
+    parser.add_argument(
+        "--output-file",
+        default=DEFAULT_OUTPUT_FILE,
+        help=f"Form8949 list of sales .csv (default: {DEFAULT_OUTPUT_FILE})",
+    )
+
+    ns = parser.parse_args(argv)
+
+    return ns.input_file, ns.output_file
 
 
 def _validate_sale_inputs(
@@ -1036,22 +1064,19 @@ def run_fifo_pipeline(df: pd.DataFrame) -> list[dict[str, str]]:
     return form8949
 
 
-def main(
-    input_file_path: str = "../asset_tx.csv",
-    output_file_path: str = "../form8949_output.csv",
-) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """Run the FIFO capital-gains pipeline on a CSV file.
 
     This function produces an IRS Form 8949-style output file.
 
-    It reads input_file_path (by default "../asset_tx.csv"),
+    It reads input_file_path (by default "asset_tx.csv"),
     keeping only the necessary columns:
 
         ``"Tx Index"``, ``"Date"``, ``"Asset"``, ``"Amount (asset)"``,
         ``"Sell price ($)"``, ``"Buy price ($)"``, ``"Type"``
 
     It then parses the rows, updates the FIFO ledger, and writes all
-    sales to output_file_path (by default "../form8949_output.csv").
+    sales to output_file_path (by default "form8949_output.csv").
 
     Args:
         input_file_path: Path to the input CSV with raw transactions.
@@ -1061,12 +1086,30 @@ def main(
     Returns:
         None.
     """
+    # parse args
+    input_file, output_file = parse_args(argv)
+
     # IO-only wrapper around the pure pipeline
-    df = pd.read_csv(input_file_path)
+    df = pd.read_csv(input_file)
     form8949 = run_fifo_pipeline(df)
 
-    pd.DataFrame(form8949).to_csv(output_file_path, index=False)
-    print(f"Success! Form 8949 data saved to {output_file_path}")
+    pd.DataFrame(form8949).to_csv(output_file, index=False)
+    print(f"Success! Form 8949 data saved to {output_file}")
+
+    # check against original.  Erase this later!!!
+    if False:
+        df_output = pd.DataFrame(form8949)
+        df_original = pd.read_csv("form8949_output_original.csv")
+        pd.set_option("display.max_columns", None)  # Show all columns
+        df_original["Proceeds difference"] = abs(
+            df_original["Proceeds"].astype(float) - df_output["Proceeds"].astype(float)
+        )
+        df_original["Cost Basis difference"] = abs(
+            df_original["Cost Basis"].astype(float)
+            - df_output["Cost Basis"].astype(float)
+        )
+        print(df_original[df_original["Proceeds difference"] > 0.05])
+        print(df_original[df_original["Cost Basis difference"] > 0.05])
 
 
 if __name__ == "__main__":
