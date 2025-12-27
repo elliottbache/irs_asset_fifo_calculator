@@ -12,6 +12,7 @@ help:
 	@echo "Common targets:"
 	@echo "  make all             Makes all except run"
 	@echo "  make deps            Makes all dependency installation (Python & C++)"
+	@echo "  make setup           Makes all necessary to subsequently run"
 	@echo "  make ci              Makes those needed for CI (lint, typecheck, test)"
 	@echo "  make clean           Remove caches and build artifacts"
 	@echo "  make venv            Create virtualenv (.venv)"
@@ -22,6 +23,7 @@ help:
 	@echo "  make typecheck       Run mypy"
 	@echo "  make test            Run pytest"
 	@echo "  make run             Run tax calculator"
+	@echo "  make tutorial        Run tax calculator in tutorial mode and compare with known results"
 
 $(VENVDIR):
 	$(PY) -m venv $(VENVDIR)
@@ -29,6 +31,9 @@ $(VENVDIR):
 .PHONY: all
 all: clean deps install-dev docs lint format typecheck
 	$(ACTIVATE); pytest -q
+
+.PHONY: setup
+setup: clean deps install-dev
 
 .PHONY: deps
 deps:
@@ -79,5 +84,9 @@ test: install-dev
 	$(ACTIVATE); pytest -q
 
 .PHONY: run
-run-server:
-	$(ACTIVATE); irs-asset-fifo-calculator
+run:
+	$(ACTIVATE); irs-fifo-taxes
+
+.PHONY: tutorial
+tutorial: clean setup
+	$(ACTIVATE); irs-fifo-taxes --input-file=examples/asset_tx.csv --output-file=form8949_example.csv; bash scripts/compare-tutorial-results.sh
