@@ -123,6 +123,6 @@ these fellows have put into the project's growth and improvement.
 
 ## License
 
-IRS asset FIFO calculator is distributed under the MIT license. 
+IRS asset FIFO calculator is distributed under the GPL-3.0 license. 
 
 <!-- docs:end -->
