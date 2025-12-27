@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "src/**"
+      - "tests/**"
       - "docs/**"
       - ".github/workflows/**"
   pull_request:
