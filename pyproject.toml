@@ -29,7 +29,7 @@ dev = [
   "myst-parser>=3.0",
   "pre-commit",
   "ruff",
-  "black",
+  "black==24.10.0",  # same as pre-commit
   "isort",
   "mypy",
   "codespell",
