@@ -1797,7 +1797,9 @@ class TestMain:
         df_in.to_csv(input_path, index=False)
 
         # call main() directly with explicit paths (IO wrapper)
-        calculate_taxes.main([f"--input-file={input_path}", f"--output-file={output_path}"])
+        calculate_taxes.main(
+            [f"--input-file={input_path}", f"--output-file={output_path}"]
+        )
 
         # check output file exists and is readable
         assert output_path.exists()
