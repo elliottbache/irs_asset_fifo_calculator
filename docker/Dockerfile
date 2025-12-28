@@ -13,4 +13,5 @@ COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir .
 
 # run program
-CMD ["irs-fifo-taxes"]
+CMD ["irs-fifo-taxes", "--input-file", "asset_tx.csv", "--output-file", "form8949.csv"]
+

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: ["irs-fifo-taxes"]
     environment:
       PYTHONUNBUFFERED: "1"
+    volumes:
+      - .:/app
+    command: ["irs-fifo-taxes", "--input-file", "asset_tx.csv", "--output-file", "form8949.csv"]
