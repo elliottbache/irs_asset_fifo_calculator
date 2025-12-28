@@ -41,7 +41,9 @@ Every time a purchase, sale, or exchange is made, the holdings of one asset
 will probably increase, and the holdings of another asset will decrease.  The
 changes in these assets must be documented, calculating proceeds minus cost
 basis for tax calculation purposes.  Purchases are added to the FIFO ledger,
-and sales are deducted from the ledger starting with the oldest lots.
+and sales are deducted from the ledger starting with the oldest lots.  The only 
+exception to these rules are for USD, which is not tracked since it does not generate gains
+or losses.
 
 Fees may be incurred for these transactions and can be deducted.
 Three cases may occur:
@@ -172,7 +174,7 @@ into the buy).
 
 ### Sell side
 - For a `"Sell"` or `"Exchange"` block, the **sell side** identifies the row
-where `"Amount (asset)"` is **negative** (again after subtracting fee rows).
+where `"Amount (asset)"` is **negative** (after subtracting fee rows).
 - `total` is the **total proceeds** after any adjustments from fees.
 
 ### Fee side
@@ -317,7 +319,7 @@ following IRS conventions.
 
 All such dictionaries collected in `form8949` are:
 - Returned by `run_fifo_pipeline(df)` as `List[Dict[str, str]]`, and
-- Written by `main(...)` to "form8949_output.csv" for import into tax software
+- Written by `main(...)` to "form8949.csv" for import into tax software
 or manual transcription to Form 8949.
 
 ---
@@ -374,7 +376,7 @@ Here’s the full flow, end to end:
    The `main(...)` function is a thin IO layer:
    - Reads the input CSV into a DataFrame.
    - Calls `run_fifo_pipeline(df)` to compute gains and losses.
-   - Writes the resulting rows to `form8949_output.csv`.
+   - Writes the resulting rows to `form8949.csv`.
 
 In short:
 

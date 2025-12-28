@@ -10,16 +10,20 @@
 
 Tax calculator that tracks capital gains from multiple purchases and sales.  This program uses a CSV file as input.  
 
-This file is called "asset_tx.csv" in the published example, but any name can be
-be used, using this name in the python call.  The file has the following header:
-"Date", "Asset", "Amount (asset)", "Sell price (\$)", "Buy price (\$)", "Account number", "Entity", "Notes", "Remaining"
+The input file's default name is "asset_tx.csv", but any name can be used, using
+this name in the ```--input-file=``` flag of the python call.  The file must have the following 
+columns and headers:
+```Tx Index```, ```Date```, ```Asset```, ```Amount (asset)```, ```Sell price ($)```, ```Buy price ($)```, ```Type```
+
+## Short tutorial demo: simple tax calculation
+![Demo](docs/demo.gif)
 
 **Table of Contents**
 
 - [What this project does](#what-this-project-does)
 - [FIFO in one paragraph](#fifo-in-one-paragraph)
-- [Installation](#installation)
-- [Quick start](#quick-start)
+- [Installation](#installation-manual-for-development-or-troubleshooting)
+- [Quick start](#quickstart)
 - [Technologies](#technologies)
 - [Development](#development)
 - [Contributing](#contributing)
@@ -27,6 +31,8 @@ be used, using this name in the python call.  The file has the following header:
 - [Author](#author)
 - [Change log](#change-log)
 - [License](#license)
+
+--- 
 
 ## What this project does
 
@@ -41,7 +47,7 @@ the library:
 2. Parses each block into:
    - **Buy side** (what you acquired)
    - **Sell side** (what you disposed of)
-   - **Fees** (possibly in one or more assets)
+   - **Fee side** (in up to one asset different from the buy side asset and sell side asset)
 3. Maintains a **FIFO ledger** of “lots” for each asset (amount, price,
    cost basis, date).
 4. For each sale, consumes the oldest lots first to compute:
@@ -49,6 +55,8 @@ the library:
    - Proceeds
    - Gain or loss
 5. Writes the result as rows suitable for **Form 8949**.
+
+--- 
 
 ## FIFO in one paragraph
 
@@ -66,6 +74,8 @@ emits one Form 8949 row per “slice”.
 For a more detailed explanation (with tables and numeric examples),
 see [`docs/fifo_overview.md`](docs/fifo_overview.md).
 
+--- 
+
 ## Quickstart
 ### Download repo
 In an Ubuntu/WSL terminal:
@@ -76,6 +86,8 @@ cd irs_asset_fifo_calculator
 ```
 
 ### Quickstart (recommended): Local (Ubuntu/WSL)
+The transactions file should first be placed at the repo root and called ```asset_tx.csv```.
+
 In an Ubuntu/WSL terminal:
 ```bash
 make setup
@@ -95,7 +107,7 @@ Tutorial example files live here:
 - `examples/asset_tx.csv`
 - `examples/form8949.csv`
 
-Note: the ```make``` command calls ```bash scripts/compare-tutorial-results.sh```.  This script may loser its
+Note: the ```make``` command calls ```bash scripts/compare-tutorial-results.sh```.  This script may lose its
 permissions depending on the method of cloning/downloading the repo.  If it does lose its executable
 permission, it can be set with
 ```bash
@@ -105,6 +117,9 @@ chmod u+x scripts/compare-tutorial-results.sh
 ### Quickstart (alternative): Docker
 Use this if you prefer Docker.  Otherwise, use the [local quickstart](#quickstart-recommended-local-ubuntuwsl) 
  above.
+
+The transactions file should first be placed at the repo root and called ```asset_tx.csv```.
+
 #### Launch Docker daemon
 On WSL:
 ```bash
@@ -123,6 +138,8 @@ docker start <name>
 ```bash
 docker compose up --build
 ```
+
+--- 
 
 ## Installation (manual, for development or troubleshooting)
 If you used [Quickstart (make setup)](#quickstart), you can skip this section.
@@ -157,6 +174,8 @@ pip install -U pip
 pip install -e .[dev]
 ```
 
+--- 
+
 ## Execution / Usage (manual, for development or troubleshooting)
 If you used [Quickstart (make setup)](#quickstart), you can skip this section.
 
@@ -170,18 +189,18 @@ irs-fifo-taxes
 ```
 Input file and output file flags are available for running in CLI.  e.g.
 ```bash
-irs-fifo-taxes --input-file="my_special_file.csv" --output-file="my_directory/form8949_2025.csv"
+irs-fifo-taxes --input-file=my_special_file.csv --output-file="my_directory/form8949_2025.csv"
 ```
 
 ### Option B: Docker
 Docker users: see [Quickstart (alternative)](#quickstart-alternative-docker): Docker.
 
-## Compare your output to the expected tutorial results
+### Compare your output to the expected tutorial results
 
 Tutorial mode is designed to be deterministic so you can validate behavior by comparing your results
 against committed “golden” results.
 
-### Run tutorial manually
+#### Run tutorial manually
 A tutorial case is available to ensure that the Form 8949 is being created correctly.  To create the 
 corresponding form, the following should be run from the repo root:
 ```bash
@@ -193,26 +212,70 @@ If there are no executable permissions on the script, they can be set with
 chmod u+x scripts/compare-tutorial-results.sh
 ```
 
-### Compare using the provided script
+#### Compare using the provided script
 From the repository root:
 ```bash
 bash scripts/compare-tutorial-logs.sh
 ```
 
-### Expected results (golden files)
+#### Expected results (golden files)
 
 The expected tutorial logs are stored in the repository at:
 - `examples/asset_tx.csv`
 - `examples/form8949.csv`
 
+--- 
+
 ## Technologies
+This project is built with:
 
-IRS asset FIFO calculator uses the following technologies and tools:
+**Core**
 
-- [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
-- [![Sphinx](https://img.shields.io/badge/Sphinx-3B4D92?style=for-the-badge&logo=sphinx&logoColor=white)](https://www.sphinx-doc.org/en/master/)
+- Python 3.11
+- pandas (CSV parsing and DataFrame transforms)
+- NumPy (numeric helpers)
+
+**Developer tooling**
+
+- pytest (tests)
+- flake8 (linting)
+- mypy (static type checking)
+- pre-commit hooks (see `.pre-commit-config.yaml`)
+
+**Documentation**
+
+- Sphinx (API and user docs)
+- MyST Markdown support
+- Read the Docs (hosted documentation)
+
+**Environment & automation**
+
+- Make (helper commands: `make setup`, `make run`, `make tutorial`, etc.)
+- Docker / docker-compose (optional containerized environment)
+- GitHub Actions (CI pipeline)
+- codecov (test coverage reporting)
+
+--- 
 
 ## Development
+### Demo GIF
+The ```.cast``` file is available for easy regeneration of the GIF file.  The following commands were used 
+to create the [GIF](#short-tutorial-demo-simple-tax-calculation) from a clean folder.
+```bash
+asciinema rec -i 3 --overwrite -t "irs-fifo-tax demo" -c \
+"tmux new-session -A -s tlscc-demo" demo.cast
+git clone https://github.com/elliottbache/irs_asset_fifo_calculator.git
+cd irs_asset_fifo_calculator
+make tutorial
+ls -latr
+cat form8949_example.csv
+exit
+exit
+asciinema-agg demo.cast demo.gif
+rm -rf irs_asset_fifo_calculator
+```
+The resulting .cast and .gif files must then be copied into the docs/ folder of the original git clone folder.
+
 ### Building the docs in PyCharm
 
 In order to create Sphinx documentation from the docstrings in PyCharm, a new run task must be created: 
@@ -221,6 +284,8 @@ Run > Edit Configurations... > + (top-left) > Sphinx task.  In the window that o
 field, and select the docs/_build folder in the "Output:" field.  If the docs or docs/_build folder do not already
 exist, they will perhaps need to be created.  The Sphinx documentation can now be created by going to Run > Run... and
 selecting the Sphinx task name.
+
+--- 
 
 ## Contributing
 
@@ -233,6 +298,10 @@ To contribute to the development of IRS asset FIFO calculator, follow the steps 
 5. Push to the branch (`git push origin feature-new`)
 6. Create a new pull request
 
+For more info, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+--- 
+
 ## Contributors
 
 Here's the list of people who have contributed to IRS asset FIFO calculator:
@@ -242,17 +311,24 @@ Here's the list of people who have contributed to IRS asset FIFO calculator:
 The IRS asset FIFO calculator development team really appreciates and thanks the time and effort that all
 these fellows have put into the project's growth and improvement.
 
+--- 
+
 ## Author
 
 - Elliott Bache – elliottbache@gmail.com
+
+--- 
 
 ## Change log
 
 - 0.1.0
     - First public FIFO release
+- 1.0.0
+    - Production-ready release
+
+--- 
 
 ## License
 
-IRS asset FIFO calculator is distributed under the GPL-3.0 license. 
-
+IRS asset FIFO calculator is distributed under the GPL-3.0 license.  For more info, see [`LICENSE`](LICENSE).
 <!-- docs:end -->
