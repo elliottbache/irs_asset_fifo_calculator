@@ -1020,24 +1020,6 @@ def run_fifo_pipeline(df: pd.DataFrame) -> list[dict[str, str]]:
         >>> any(r["Description"].endswith("NVDA") for r in rows)
         True
     """
-    # Work on a copy so callers keep their original df unchanged
-    df = df.copy()
-
-    # create Tx Date column with date format (instead of datetime) and
-    # only keep pertinent columns
-    df["Tx Date"] = pd.to_datetime(df["Date"]).dt.date
-    df = df[
-        [
-            "Tx Index",
-            "Tx Date",
-            "Asset",
-            "Amount (asset)",
-            "Sell price ($)",
-            "Buy price ($)",
-            "Type",
-        ]
-    ]
-
     # prepare FIFO ledger for each token
     fifo: defaultdict[str, deque[FifoLot]] = defaultdict(deque)
 
@@ -1089,10 +1071,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     # parse args
     input_file, output_file = parse_args(argv)
 
-    # IO-only wrapper around the pure pipeline
-    df = pd.read_csv(input_file)
+    # input
+    columns_to_read = [
+        "Date",
+        "Tx Index",
+        "Asset",
+        "Amount (asset)",
+        "Sell price ($)",
+        "Buy price ($)",
+        "Type",
+    ]
+    df = pd.read_csv(input_file, usecols=columns_to_read, engine="pyarrow")
+    df["Tx Date"] = pd.to_datetime(df["Date"]).dt.date
+    df.drop("Date", axis=1, inplace=True)
+
+    # fifo pipeline
     form8949 = run_fifo_pipeline(df)
 
+    # output
     pd.DataFrame(form8949).to_csv(output_file, index=False)
     print(f"Success! Form 8949 data saved to {output_file}")
 
