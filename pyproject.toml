@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "irs-asset-fifo-calculator"
-version = "0.1.0"
+version = "1.0.0"
 description = "FIFO-based IRS Form 8949 capital gains calculator for assets."
 readme = "README.md"
 requires-python = ">=3.11"
