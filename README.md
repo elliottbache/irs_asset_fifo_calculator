@@ -123,8 +123,6 @@ docker start <name>
 ```bash
 docker compose up --build
 ```
-Docker Compose uses network_mode: host (Linux/WSL). On Mac/Windows, use local make run-* or adjust 
-compose networking/certs.
 
 ## Installation (manual, for development or troubleshooting)
 If you used [Quickstart (make setup)](#quickstart), you can skip this section.

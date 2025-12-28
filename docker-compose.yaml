@@ -1,0 +1,8 @@
+services:
+  taxes:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["irs-fifo-taxes"]
+    environment:
+      PYTHONUNBUFFERED: "1"
