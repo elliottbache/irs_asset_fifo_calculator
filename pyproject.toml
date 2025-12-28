@@ -17,6 +17,7 @@ keywords = ["taxes", "IRS", "capital-gains", "FIFO"]
 # Runtime deps
 dependencies = [
   "pandas>=2.0",
+  "pyarrow"
 ]
 
 # Optional extras for dev tools
