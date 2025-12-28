@@ -210,5 +210,10 @@ __marimo__/
 .idea
 *Zone.Identifier
 
+# Sphinx
+_autosummary
+
 # Input data
 /*.csv
+
+PRIVATE
