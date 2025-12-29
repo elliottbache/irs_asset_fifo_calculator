@@ -11,10 +11,8 @@ from .calculate_taxes import (
 )
 
 try:
-    # Use the distribution name from your pyproject.toml
     __version__ = _version("irs-asset-fifo-calculator")
 except PackageNotFoundError:  # pragma: no cover
-    # Package is not installed (e.g., running from a source checkout without `pip install -e .`)
     __version__ = "0.0.0"
 
 __all__ = ["AssetData", "FifoLot", "main", "run_fifo_pipeline"]
