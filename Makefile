@@ -11,7 +11,7 @@ DEV_EXTRAS ?= dev
 help:
 	@echo "Common targets:"
 	@echo "  make all             Makes all except run"
-	@echo "  make deps            Makes all dependency installation (Python & C++)"
+	@echo "  make deps            Makes all dependency installation (Python)"
 	@echo "  make setup           Makes all necessary to subsequently run"
 	@echo "  make ci              Makes those needed for CI (lint, typecheck, test)"
 	@echo "  make clean           Remove caches and build artifacts"
