@@ -8,6 +8,17 @@
 [![Release](https://img.shields.io/github/v/release/elliottbache/irs_asset_fifo_calculator)](https://github.com/elliottbache/irs_asset_fifo_calculator/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green?style=plastic)](https://github.com/elliottbache/irs_asset_fifo_calculator/blob/main/LICENSE)
 
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
+![pandas](https://img.shields.io/badge/pandas-CSV%20%2F%20DataFrames-blue?logo=pandas&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-numeric%20helpers-blue?logo=numpy&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker&logoColor=white)
+![Make](https://img.shields.io/badge/Make-automation-blue)
+![pytest](https://img.shields.io/badge/tests-pytest-blue?logo=pytest&logoColor=white)
+![mypy](https://img.shields.io/badge/types-mypy-blue)
+![flake8](https://img.shields.io/badge/lint-flake8-blue)
+![pre--commit](https://img.shields.io/badge/hooks-pre--commit-blue?logo=pre-commit&logoColor=white)
+![Sphinx](https://img.shields.io/badge/docs-Sphinx-blue?logo=sphinx&logoColor=white)
+
 Tax calculator that tracks capital gains from multiple purchases and sales.  This program uses a CSV file as input.  
 
 The input file's default name is "asset_tx.csv", but any name can be used, using
