@@ -26,6 +26,16 @@ this name in the ```--input-file=``` flag of the python call.  The file must hav
 columns and headers:
 ```Tx Index```, ```Date```, ```Asset```, ```Amount (asset)```, ```Sell price ($)```, ```Buy price ($)```, ```Type```
 
+## What this project demonstrates
+
+This project demonstrates a small but complete Python package for turning transaction CSV data into FIFO-based Form 8949-style capital-gains output. It separates pure calculation logic from file IO, uses typed data structures for transaction and FIFO-lot handling, and includes tests and documentation around the core parsing, lot-reduction, and reporting workflow.
+
+- Implements a pandas-based CSV processing pipeline with explicit transaction grouping by `Tx Index` and `Type`.
+- Uses typed Python (`dataclasses`, `TypedDict`, `Literal`, type hints) with mypy checks for the core package code.
+- Includes pytest coverage for parsing, FIFO lot reduction, fee handling, integration flows, and CLI/file-output behavior.
+- Provides package-style project structure with `pyproject.toml`, editable install support, and a reusable `run_fifo_pipeline(df)` API.
+- Includes Sphinx/Read the Docs documentation and GitHub Actions CI for linting, type checking, and tests.
+
 ## Short tutorial demo: simple tax calculation
 ![Demo](docs/demo.gif)
 
